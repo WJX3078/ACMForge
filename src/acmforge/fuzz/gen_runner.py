@@ -10,6 +10,7 @@ stdout 即为完整输入文件内容；必须只输出输入，不得有额外�
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -61,32 +62,50 @@ class GenRunner:
         if not self.gen_path.is_file():
             raise FileNotFoundError(f"generator 不存在: {self.gen_path}")
 
-    def run(self, mode: str, seed: int, n: int | None = None) -> GenOutput:
-        cmd = [
-            sys.executable,
-            str(self.gen_path),
-            "--mode",
-            mode,
-            "--seed",
-            str(seed),
-        ]
+    def run(self, mode: str, seed: int, params: dict | None = None, n: int | None = None) -> GenOutput:
+        """运行生成器（P0-11 协议）。
+
+        - 新协议：--params '<JSON>'（n 作为 params 的一个键自动并入）
+        - 兼容旧协议：gen.py 不认识 --params（argparse 退出码 2）时，
+          自动去掉 --params 重试（保留 --n），并告警一次
+        """
+        merged: dict = dict(params or {})
         if n is not None:
-            cmd += ["--n", str(n)]
+            merged.setdefault("n", n)
+
+        base_cmd = [sys.executable, str(self.gen_path), "--mode", mode, "--seed", str(seed)]
+        cmd = list(base_cmd)
+        if merged:
+            cmd += ["--params", json.dumps(merged)]
+        if "n" in merged:
+            cmd += ["--n", str(merged["n"])]
+
         env = dict(os.environ)
         env.setdefault("PYTHONIOENCODING", "utf-8")
         start = time.perf_counter()
         try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=GEN_TIMEOUT_S,
-                env=env,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
+            proc = self._exec(cmd, env)
         except subprocess.TimeoutExpired:
             return GenOutput(ok=False, error=f"gen 超时（>{GEN_TIMEOUT_S}s）")
         except OSError as e:
             return GenOutput(ok=False, error=f"gen 启动失败: {e}")
+
+        if proc.returncode == 2 and "--params" in cmd:
+            # 旧协议 gen.py：不认识 --params，回退到 --n
+            if not getattr(self, "_warned_legacy", False):
+                logger.warning("gen.py %s 不支持 --params，回退旧协议（仅 --n）", self.gen_path.name)
+                self._warned_legacy = True
+            legacy = [c for c in base_cmd]
+            if "n" in merged:
+                legacy += ["--n", str(merged["n"])]
+            start = time.perf_counter()
+            try:
+                proc = self._exec(legacy, env)
+            except subprocess.TimeoutExpired:
+                return GenOutput(ok=False, error=f"gen 超时（>{GEN_TIMEOUT_S}s）")
+            except OSError as e:
+                return GenOutput(ok=False, error=f"gen 启动失败: {e}")
+
         elapsed = (time.perf_counter() - start) * 1000
         if proc.returncode != 0:
             return GenOutput(
@@ -96,6 +115,15 @@ class GenRunner:
             )
         return GenOutput(
             ok=True, text=proc.stdout.decode("utf-8", errors="replace"), time_ms=elapsed
+        )
+
+    def _exec(self, cmd: list[str], env: dict):
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=GEN_TIMEOUT_S,
+            env=env,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
 
     def modes(self) -> list[str]:

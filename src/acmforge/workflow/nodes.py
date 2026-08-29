@@ -982,8 +982,8 @@ def generate_corpus_batch(
 
     plans = expand_strategies(ctx, strategies, start_seed)
     for strategy, idx, seed in plans:
-        n_param = strategy.params.get("n")
-        out = gen.run(strategy.mode, seed=seed, n=n_param)
+        # P0-11：完整 params 透传给 generator（n 只是其中一个键）
+        out = gen.run(strategy.mode, seed=seed, params=strategy.params)
         if not out.ok or not out.text.strip():
             warnings.append(f"策略 {strategy.name}#{idx} gen 失败: {out.error}")
             continue

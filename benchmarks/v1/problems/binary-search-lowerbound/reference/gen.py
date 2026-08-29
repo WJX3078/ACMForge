@@ -59,7 +59,8 @@ def gen(mode, n, rng):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", default=None)
-    ap.add_argument("--n", type=int, default=None)
+    ap.add_argument("--n", type=int, default=None, help="规模（legacy；推荐 --params）")
+    ap.add_argument("--params", default=None, help="JSON 参数，如 '{\"n\": 200000}'")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--modes", action="store_true")
     args = ap.parse_args()
@@ -68,7 +69,9 @@ def main():
         return
     if args.mode is None:
         ap.error("--mode is required")
-    n, q, a, qs = gen(args.mode, args.n, random.Random(args.seed))
+    params = json.loads(args.params) if args.params else {}
+    n_param = args.n if args.n is not None else params.get("n")
+    n, q, a, qs = gen(args.mode, n_param, random.Random(args.seed))
     out = [f"{n} {q}", " ".join(map(str, a))]
     out += [str(x) for x in qs]
     sys.stdout.write("\n".join(out) + "\n")

@@ -2,7 +2,9 @@
 
 # 硬性规则
 1. 你要产出一个 Python 数据生成器 gen.py，它必须：
-   - 支持 argparse 参数：--mode（模式名）、--n（规模）、--seed（随机种子）；
+   - 支持 argparse 参数：--mode（模式名）、--seed（随机种子）、--params（JSON 字符串，
+     如 --params '{"n": 200000, "duplicate_ratio": 0.99}'；其中 n 是规模），
+     并保留 --n 作为规模的历史别名；
    - 同一 (mode, n, seed) 输入**必须**产生字节级相同的输出（用 random.Random(seed)）；
    - 只向 stdout 输出题目的合法输入文件内容，不得有任何提示性文字或多余空行结尾差异；
    - 严格遵守题面约束（n 的范围、元素取值范围），绝不能生成非法输入；
