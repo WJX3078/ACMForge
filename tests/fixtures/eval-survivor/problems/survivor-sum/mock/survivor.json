@@ -1,0 +1,14 @@
+{
+  "analyses": [
+    {
+      "target_mutant_id": "mutant_idea_reversed_sum",
+      "why_survived": "该实现与 std 语义等价（加法交换律），现有测试不可能击杀它",
+      "required_structure": "无（等价变异体不可击杀）",
+      "required_scale": "-",
+      "required_edge_case": "-",
+      "mode": "small",
+      "generator_parameters": {"n": 10},
+      "purpose": "survivor 分析的定向策略（mock：即使不可击杀也要产出可回溯的分析记录）"
+    }
+  ]
+}

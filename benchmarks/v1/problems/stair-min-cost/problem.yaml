@@ -1,0 +1,70 @@
+version: "1"
+slug: stair-min-cost
+title: 爬楼梯的最小花费
+language: zh
+
+target:
+  rating: 1200
+  tags: ["dp"]
+
+summary: 每次可以爬 1 或 2 级台阶，落到台阶上要付费，求到达塔顶的最小总花费。
+
+task: |
+  有 n 级台阶，第 i 级台阶（1-based）的花费为 c_i。
+  你从地面（第 0 级）出发，每次可以向上爬 1 级或 2 级；
+  每次落到某级台阶上，就需要支付该级台阶的花费 c_i。
+  目标是到达第 n 级台阶（不必越过），求最小总花费。
+  注意：第一步可以直接落到第 1 级或第 2 级。
+
+input_format: |
+  第一行一个整数 n。
+  第二行 n 个整数 c_1, c_2, \dots, c_n，以空格分隔。
+
+output_format: |
+  输出一行一个整数：最小总花费。
+
+constraints:
+  items:
+    - name: n
+      description: 1 \le n \le 30
+    - name: c_i
+      description: 1 \le c_i \le 10^9
+  bounds:
+    n: [1, 30]
+    value: [1, 1000000000]
+
+samples:
+  - input: |
+      3
+      10 15 20
+    expected_output: "30"
+    note: 落到第 1 级（10），再跨两级落到第 3 级（20），共 30。
+  - input: |
+      1
+      7
+    expected_output: "7"
+  - input: |
+      2
+      100 1
+    expected_output: "1"
+
+limits:
+  time_ms: 2000
+  memory_mb: 256
+
+intended_solution:
+  observations:
+    - 设 dp[i] 为到达第 i 级的最小花费，则 dp[i] = c_i + min(dp[i-1], dp[i-2])（dp[0] = 0 视为地面）。
+    - 答案为 dp[n]。
+  algorithm:
+    - 顺序计算 dp[1..n]：dp[1] = c_1；对 i \ge 2：dp[i] = c_i + min(dp[i-1], dp[i-2] 或 0)。
+    - 注意 dp[2] = c_2 + min(dp[1], dp[0]) = c_2 + 0（可以从地面直接跨两级）。
+  proof_outline:
+    - 到达第 i 级的最后一步只能来自第 i-1 或 i-2 级，取两者较小值即最优子结构。
+  complexity:
+    time: O(n)
+    memory: O(n)
+
+assets: {}
+
+notes: 花费和最大约 3 \times 10^{10}，需要 64 位整数；n 很小是给暴力解留空间。

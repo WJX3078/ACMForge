@@ -1,0 +1,16 @@
+{
+  "name": "acmforge-eval-v1",
+  "description": "内部合成评测集：覆盖 9 个算法类别与三档难度，全部为原创合成题（无第三方题面）",
+  "problems": [
+    {"id": "array-sum", "tags": ["implementation"], "difficulty": "easy"},
+    {"id": "binary-search-lowerbound", "tags": ["binary-search"], "difficulty": "easy"},
+    {"id": "interval-scheduling", "tags": ["greedy"], "difficulty": "medium"},
+    {"id": "max-subarray-sum", "tags": ["dp"], "difficulty": "medium"},
+    {"id": "stair-min-cost", "tags": ["dp"], "difficulty": "medium"},
+    {"id": "mod-pow", "tags": ["math"], "difficulty": "medium"},
+    {"id": "two-sum-sorted-count", "tags": ["two-pointers"], "difficulty": "medium"},
+    {"id": "bfs-shortest-path", "tags": ["graph"], "difficulty": "medium"},
+    {"id": "sliding-window-min", "tags": ["data-structure"], "difficulty": "hard"},
+    {"id": "tree-diameter", "tags": ["tree"], "difficulty": "hard"}
+  ]
+}

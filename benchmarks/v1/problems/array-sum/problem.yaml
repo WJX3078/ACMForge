@@ -1,0 +1,63 @@
+version: "1"
+slug: array-sum
+title: 数列求和
+language: zh
+
+target:
+  rating: 800
+  tags: ["implementation"]
+
+summary: 输出 n 个整数的和。
+
+task: |
+  给定 n 个整数 a_1, a_2, \dots, a_n，输出它们的和 S = a_1 + a_2 + \dots + a_n。
+
+input_format: |
+  第一行一个整数 n。
+  第二行 n 个整数 a_1, a_2, \dots, a_n，以空格分隔。
+
+output_format: |
+  输出一行一个整数 S。
+
+constraints:
+  items:
+    - name: n
+      description: 1 \le n \le 2 \times 10^5
+    - name: a_i
+      description: -10^9 \le a_i \le 10^9
+  bounds:
+    n: [1, 200000]
+    value: [-1000000000, 1000000000]
+
+samples:
+  - input: |
+      3
+      1 2 3
+    expected_output: "6"
+  - input: |
+      4
+      -1000000000 -1000000000 1000000000 1000000000
+    expected_output: "0"
+  - input: |
+      1
+      -5
+    expected_output: "-5"
+
+limits:
+  time_ms: 2000
+  memory_mb: 256
+
+intended_solution:
+  observations:
+    - 和的绝对值最大为 2 \times 10^{14}，必须用 64 位整数。
+  algorithm:
+    - 顺序读入并累加到 long long 变量。
+  proof_outline:
+    - 求和定义即答案。
+  complexity:
+    time: O(n)
+    memory: O(1)
+
+assets: {}
+
+notes: 注意和会超出 32 位整数范围。

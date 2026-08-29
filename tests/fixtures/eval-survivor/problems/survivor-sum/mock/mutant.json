@@ -1,0 +1,5 @@
+{
+  "__file__": "wrong_reversed.cpp",
+  "description": "逆向累加（语义等价，预期幸存）",
+  "expected_verdict": "WA"
+}

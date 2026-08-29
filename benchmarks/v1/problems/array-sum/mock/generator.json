@@ -1,0 +1,13 @@
+{
+  "__file__": "reference/gen.py",
+  "modes": [
+    "min",
+    "small",
+    "random",
+    "max",
+    "all_neg",
+    "big_values",
+    "zeros"
+  ],
+  "notes": "参考生成器（mock）"
+}

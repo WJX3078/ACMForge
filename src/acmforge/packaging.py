@@ -222,6 +222,9 @@ def node_package(ctx) -> NodeResult:
 
     pkg = ctx.ws.final_dir / spec.slug
     if pkg.exists():
+        # 同一 run 内重新打包（如 --from package）：显式记录，绝不无声覆盖
+        logger.warning("重新打包：替换已存在的 final 包 %s", pkg)
+        result.warnings.append(f"重新打包：替换已存在的 final 包 {ctx.ws.rel(pkg)}")
         shutil.rmtree(pkg)
     (pkg / "solutions").mkdir(parents=True)
     (pkg / "gen").mkdir()

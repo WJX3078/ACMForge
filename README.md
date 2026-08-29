@@ -13,7 +13,7 @@
 1. **Agent = Think，Orchestrator = Decide，Runner = Execute，Verifier = Verify**
    LLM 生成的代码被视为不可信代码：一律经过编译、限时限内存运行、与暴力解对拍、被错误解击杀矩阵验证。任何"LLM 说它是对的"都不算数。
 2. **ProblemSpec 是唯一事实源**（`problem.yaml`）：题意、格式、约束、预期解法、时限内存全部结构化，Pydantic 强校验。
-3. **样例答案永远由程序算出**，绝不采用 LLM 手写答案（防幻觉硬规则）。
+3. **样例答案永远由程序计算**：流水线用 std 计算样例答案并与 brute 输出交叉校验（不一致即 FAIL），绝不采用 LLM 手写答案（防幻觉硬规则）。
 4. **一切可复现**：数据生成器 `gen.py` 按 seed 确定性输出；每次 run 独立目录、状态落盘、断点续跑。
 5. **产品指标不是"生成了题面"**，而是：对拍 mismatch=0、变异体 kill rate、TLE 解是否被卡、std 用时占时限比例、审题是否通过 —— 全部进入 `quality.json`。
 
@@ -114,6 +114,25 @@ acmforge runs                              # 列出所有 run
 
 `configs/default.yaml`（所有数值可覆盖，代码零 magic number）：LLM、fuzz（对拍组数/规模/seed/shrink）、mutants（源码变异开关、LLM 数量）、tests（候选批量、kill rate 目标、轮数、评估预算）、benchmark（repeats、std 目标占比）、repair（最大修复轮数）、sandbox 预留。
 
+## 评测框架（Agent Reliability Eval）
+
+> 目标：可量化地回答"ACMForge 到底有多可靠，失败发生在哪里"。
+
+```bash
+# mock 模式（无需 API Key，数据集自带参考实现的"标准 Agent 回应"）
+acmforge eval benchmarks/v1 --provider mock --preset standard
+
+# 真实 LLM 模式（测 Agent 的实际可靠性）
+set ACMFORGE_API_KEY=sk-xxxx
+acmforge eval benchmarks/v1 --provider llm
+```
+
+- 数据集 `benchmarks/v1/`：10 道原创合成题，覆盖 implementation / greedy / binary-search / two-pointers / DP / graph / tree / data-structure / math 九类、三档难度。每题含 problem.yaml（不含 assets）+ 参考实现（mock 模式充当"标准 Agent"）。
+- 指标：pipeline 成功率、STD 首过正确率/修复次数、differential 用例数、mutant 编译率/重复率/等价率/击杀率、TLE 击杀率、选测数、LLM 调用数与 token 用量、耗时。
+- 失败分类（FailureType）：每个失败归入 SPEC_INVALID / LLM_ERROR / STD_LOGIC_ERROR / TESTS_TOO_WEAK / TLE_SURVIVED 等 23 类，summary 输出分布、Top 5 失败原因与"最值得优化的 Agent"。
+- 产物：`evals/<eval_id>/`（summary.json / summary.md / problems/*.json / failures/*.md）。
+- CI 使用 MockProvider，不依赖网络与真实 Key；mutant 生成走 `ProblemSpec → WrongIdeaSpec → Wrong Solution` 两段式，幸存者进入 SurvivorAnalyzer 定向闭环（所有轮次记录在 kill_matrix manifest 的 rounds_log，可回溯"为什么生成这个测试"）。
+
 ## 设计决策（两份规划的取舍）
 
 | 议题 | 规划 A（ACMForge） | 规划 B（acm-setter） | **本实现采用** | 理由 |
@@ -134,8 +153,8 @@ acmforge runs                              # 列出所有 run
 .venv/Scripts/python -m pytest tests/ -q
 ```
 
-- 单元：领域模型、配置、workspace 隔离与防覆盖、checker、shrinker（纯函数）、贪心选测、变异算子（不碰编译器）。
-- 集成（有 g++ 才跑）：编译/超时/RE/输出上限防护、植入 bug 的 std 被对拍抓住且反例可复现、正确 std 全绿、**完整流水线离线跑通（kill 7/7、决策 accept）**、坏 std 流水线正确失败并落盘反例、断点续跑。
+- 单元：领域模型、配置、workspace 隔离与防覆盖、checker、shrinker（纯函数）、贪心选测、变异算子、失败分类器（不碰编译器）。
+- 集成（有 g++ 才跑）：编译/超时/RE/输出上限防护、植入 bug 的 std 被对拍抓住且反例可复现、正确 std 全绿、**完整流水线离线跑通（kill 7/7、决策 accept）**、坏 std 流水线正确失败并落盘反例、断点续跑、**数据集参考实现对拍一致性、eval mock 全链路、survivor 定向闭环**。
 
 ## 已知边界（诚实声明）
 

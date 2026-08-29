@@ -11,7 +11,13 @@ class SolverAgent(BaseAgent):
     name = "solver"
 
     def solve(self, spec) -> tuple[CodeSolution, dict]:
-        result, meta = self._ask({**spec_context(spec), "counterexample": None}, CodeSolution)
+        variables = {
+            **spec_context(spec),
+            "counterexample": None,
+            "previous_code": None,
+            "previous_version": "",
+        }
+        result, meta = self._ask(variables, CodeSolution)
         return result, meta
 
     def repair(

@@ -1,0 +1,15 @@
+{
+  "ideas": [
+    {
+      "id": "reversed_sum",
+      "category": "IMPLEMENTATION_BUG",
+      "title": "等价实现（逆向累加）",
+      "reasoning_summary": "从后往前累加，结果与正序累加完全相同（故意等价，用于触发 survivor 闭环）",
+      "why_plausible": "代码看起来完全合理",
+      "claimed_complexity": "O(n)",
+      "expected_failure_patterns": [],
+      "counterexample_shape": "不存在（语义等价）",
+      "target_constraints": []
+    }
+  ]
+}

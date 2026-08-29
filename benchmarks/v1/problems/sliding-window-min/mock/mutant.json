@@ -1,0 +1,5 @@
+{
+  "__file__": "wrong_max.cpp",
+  "description": "按 max_instead_of_min 思路实现：输出窗口最大值",
+  "expected_verdict": "WA"
+}

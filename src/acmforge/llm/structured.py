@@ -30,7 +30,8 @@ def ask_structured(
     for attempt in range(1, max_retries + 1):
         prompt = user if not conversation_tail else user + conversation_tail
         started = __import__("time").perf_counter()
-        raw = provider.complete(agent, system, prompt)
+        captured: list = []
+        raw = provider.complete(agent, system, prompt, usage_sink=captured.append)
         latency_ms = (__import__("time").perf_counter() - started) * 1000
         _trace(
             trace_path,
@@ -39,6 +40,7 @@ def ask_structured(
             prompt_sha=sha256_text(prompt),
             output_sha=sha256_text(raw),
             latency_ms=latency_ms,
+            usage=captured[0] if captured else None,
             ok=True,
             meta=trace_meta,
         )

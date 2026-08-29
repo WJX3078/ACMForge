@@ -23,6 +23,29 @@ logger = get_logger("acmforge.gen")
 
 GEN_TIMEOUT_S = 30
 
+# LLM 生成的 gen.py 在编排进程用户态直接执行（Windows 无 rlimit），
+# 至少静态拦截明显的危险 import / 调用，作为最小防线。
+# 允许：argparse / random / json / sys（stdout）——生成器只需纯计算输出。
+_GEN_FORBIDDEN_RE = __import__("re").compile(
+    r"\b(import\s+(os|subprocess|socket|shutil|ctypes|http|urllib|requests|pathlib|threading)|"
+    r"from\s+(os|subprocess|socket|shutil|ctypes|http|urllib|requests|pathlib|threading)\s+import|"
+    r"\beval\s*\(|\bexec\s*\(|\b__import__\b|"
+    r"\bopen\s*\()",
+    __import__("re").IGNORECASE,
+)
+
+
+def assert_gen_safe(code: str) -> None:
+    """LLM 生成的生成器必须通过静态安全检查才能落盘执行。
+
+    只允许 pure-computation 风格的生成器（random/argparse/sys.stdout）。
+    """
+    bad = _GEN_FORBIDDEN_RE.search(code)
+    if bad:
+        from acmforge.domain.errors import SpecError
+
+        raise SpecError(f"gen.py 包含被禁止的操作（{bad.group(0)!r}）：生成器必须只做纯计算输出")
+
 
 @dataclass
 class GenOutput:

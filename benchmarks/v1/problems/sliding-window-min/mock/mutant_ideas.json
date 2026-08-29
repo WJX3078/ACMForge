@@ -1,0 +1,15 @@
+{
+  "ideas": [
+    {
+      "id": "max_instead_of_min",
+      "category": "WRONG_GREEDY",
+      "title": "窗口输出最大值",
+      "reasoning_summary": "单调队列的方向写反，输出的是窗口最大值而不是最小值",
+      "why_plausible": "对全相同数组输出一致，小样例若不仔细看不出来",
+      "claimed_complexity": "O(n)",
+      "expected_failure_patterns": ["任何窗口内元素不完全相同的输入"],
+      "counterexample_shape": "任意包含递减结构的窗口",
+      "target_constraints": ["n", "value"]
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+version: "1"
+slug: binary-search-lowerbound
+title: 第一个不小于 x 的位置
+language: zh
+
+target:
+  rating: 1100
+  tags: ["binary-search"]
+
+summary: 非降序数组上多次查询第一个大于等于 x 的下标。
+
+task: |
+  给定一个非降序排列的整数数组 a_1 \le a_2 \le \dots \le a_n。
+  有 q 次询问，每次给定整数 x，输出最小的下标 i（1-based）满足 a_i \ge x；
+  若不存在这样的下标，输出 -1。
+
+input_format: |
+  第一行两个整数 n, q。
+  第二行 n 个整数 a_1, \dots, a_n（非降序）。
+  接下来 q 行，每行一个整数 x。
+
+output_format: |
+  对每个询问输出一行一个整数：满足条件的最小下标，或 -1。
+
+constraints:
+  items:
+    - name: n, q
+      description: 1 \le n, q \le 2 \times 10^5
+    - name: a_i, x
+      description: -3 \times 10^9 \le a_i, x \le 3 \times 10^9（超出 32 位整数范围）
+    - name: order
+      description: a 非降序（a_1 \le a_2 \le \dots \le a_n）
+  bounds:
+    n: [1, 200000]
+    value: [-3000000000, 3000000000]
+
+samples:
+  - input: |
+      5 3
+      1 3 3 7 9
+      3
+      4
+      10
+    expected_output: "2\n4\n-1"
+    note: x=3 时下标 2 是第一个满足 a_i \ge 3 的位置；x=4 时 a_4=7 是第一个 \ge 4 的元素；x=10 无解。
+  - input: |
+      1 2
+      -5
+      -5
+      0
+    expected_output: "1\n-1"
+
+limits:
+  time_ms: 2000
+  memory_mb: 256
+
+intended_solution:
+  observations:
+    - a_i \ge x 的下标构成后缀，具有单调性，可二分。
+  algorithm:
+    - 每次询问对数组二分（std::lower_bound），得到 O(log n) 的单次查询。
+  proof_outline:
+    - lower_bound 返回第一个 >= x 的迭代器，与定义一致；数组非降序保证单调性。
+  complexity:
+    time: O((n + q) log n)
+    memory: O(n)
+
+assets: {}

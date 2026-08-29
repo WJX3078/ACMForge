@@ -1,0 +1,5 @@
+{
+  "__file__": "wrong_directed.cpp",
+  "description": "按 directed_edge_bug 思路实现：无向图只建单向边",
+  "expected_verdict": "WA"
+}

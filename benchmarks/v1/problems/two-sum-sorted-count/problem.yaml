@@ -1,0 +1,71 @@
+version: "1"
+slug: two-sum-sorted-count
+title: 有序数组的和为 s 的数对
+language: zh
+
+target:
+  rating: 1300
+  tags: ["two-pointers"]
+
+summary: 非降序数组中统计和为 s 的数对 (i, j)，i < j。
+
+task: |
+  给定一个非降序的整数数组 a_1 \le a_2 \le \dots \le a_n 和目标整数 s。
+  统计满足 a_i + a_j = s 且 i < j 的下标对 (i, j) 的数量。
+
+input_format: |
+  第一行两个整数 n, s。
+  第二行 n 个整数 a_1, \dots, a_n（非降序）。
+
+output_format: |
+  输出一行一个整数：满足条件的数对数量（可用 64 位整数表示）。
+
+constraints:
+  items:
+    - name: n
+      description: 1 \le n \le 2 \times 10^5
+    - name: a_i
+      description: -10^9 \le a_i \le 10^9
+    - name: s
+      description: -2 \times 10^9 \le s \le 2 \times 10^9
+    - name: order
+      description: a 非降序
+  bounds:
+    n: [1, 200000]
+    value: [-1000000000, 1000000000]
+
+samples:
+  - input: |
+      5 6
+      1 2 3 4 5
+    expected_output: "2"
+    note: (1,5) 与 (2,4)。
+  - input: |
+      6 8
+      4 4 4 4 4 4
+    expected_output: "15"
+    note: 6 个相同元素两两配对，C(6,2)=15。
+  - input: |
+      3 100
+      1 2 3
+    expected_output: "0"
+
+limits:
+  time_ms: 2000
+  memory_mb: 256
+
+intended_solution:
+  observations:
+    - 双指针：l 从左、r 从右；a_l + a_r < s 则 ++l，> s 则 --r。
+    - 相等时对"值相同的连续段"计数：设左段长 x、右段长 y，贡献 x*y（同一段时贡献 C(len,2)）。
+  algorithm:
+    - 左右指针相向移动；相等时统计两个相等段的长度并累加贡献，然后跳过两段。
+  proof_outline:
+    - 和偏小只有左移 l 可行，偏大只有右移 r 可行；相等段的组合数计算不重不漏。
+  complexity:
+    time: O(n)
+    memory: O(1)
+
+assets: {}
+
+notes: 全相同数组答案约 n^2/2，需要 64 位整数。

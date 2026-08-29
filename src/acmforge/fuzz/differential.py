@@ -146,9 +146,14 @@ class DifferentialFuzzer:
 
 
 def make_small_cases(fuzz_cfg, modes: list[str], rng_seed: int) -> list[CaseRequest]:
-    """构造对拍 case 列表：优先用 small 感知的 mode，否则用 random + 小 n。"""
+    """构造对拍 case 列表：只用暴力可解的小规模模式（small/min/tiny/edge）。
+
+    注意：不轮询 "random" —— 某些题的 random 模式会生成暴力不可解的规模
+    （如 mod-pow 的 e=10^18）。n 由 rng 在 [1, small_n] 内确定性产生，
+    gen 侧把 n 解释为该模式的规模上限。
+    """
     rng = random.Random(rng_seed)
-    preferred = [m for m in modes if m in ("small", "min", "random", "tiny", "edge")]
+    preferred = [m for m in modes if m in ("small", "min", "tiny", "edge")]
     if not preferred:
         preferred = modes[:1] if modes else ["random"]
     cases: list[CaseRequest] = []

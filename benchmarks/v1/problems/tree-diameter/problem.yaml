@@ -1,0 +1,72 @@
+version: "1"
+slug: tree-diameter
+title: 树的直径
+language: zh
+
+target:
+  rating: 1600
+  tags: ["tree", "dfs"]
+
+summary: 求带权无根树中任意两点间简单路径权值和的最大值。
+
+task: |
+  给定一棵 n 个节点的带权无根树（节点编号 1..n，n-1 条边保证连通）。
+  定义两点 u, v 间的距离为它们之间简单路径的边权之和。
+  求所有点对中距离的最大值（即树的直径），输出这个最大值。
+
+input_format: |
+  第一行一个整数 n。
+  接下来 n-1 行，每行三个整数 u, v, w，表示一条连接 u 与 v、权值为 w 的边。
+
+output_format: |
+  输出一行一个整数：树的直径（n = 1 时输出 0）。
+
+constraints:
+  items:
+    - name: n
+      description: 1 \le n \le 10^5
+    - name: w
+      description: 1 \le w \le 10^9
+    - name: tree
+      description: 输入保证是一棵树（连通且无环）
+  bounds:
+    n: [1, 100000]
+    value: [1, 1000000000]
+
+samples:
+  - input: |
+      1
+    expected_output: "0"
+  - input: |
+      3
+      1 2 5
+      2 3 7
+    expected_output: "12"
+  - input: |
+      5
+      1 2 3
+      1 3 3
+      3 4 1
+      3 5 1
+    expected_output: "7"
+    note: 直径为 2->1->3->4（或到 5），权值和 3+3+1=7。
+
+limits:
+  time_ms: 2000
+  memory_mb: 256
+
+intended_solution:
+  observations:
+    - 两次 BFS：从任意点出发找到最远点 u，再从 u 找最远点 v，dist(u, v) 即直径。
+  algorithm:
+    - 第一遍 BFS（带权层扩展，用队列存 (点, 距离)）从节点 1 找最远点 u；
+      第二遍从 u 找最远距离，即为直径。全程 long long。
+  proof_outline:
+    - 树上从任意点出发的最远点必为某条直径的一个端点（经典引理），故第二次 BFS 的最远距离就是直径。
+  complexity:
+    time: O(n)
+    memory: O(n)
+
+assets: {}
+
+notes: 距离和最大约 10^{14}，必须使用 64 位整数；n 较大，避免深递归（可用 BFS 迭代实现）。

@@ -1,0 +1,19 @@
+{
+  "__file__": "reference/gen.py",
+  "modes": [
+    "min",
+    "small",
+    "random",
+    "max",
+    "all_neg",
+    "all_pos",
+    "all_same",
+    "alternating",
+    "increasing",
+    "decreasing",
+    "many_duplicates",
+    "big_values",
+    "valley"
+  ],
+  "notes": "参考生成器（mock）"
+}

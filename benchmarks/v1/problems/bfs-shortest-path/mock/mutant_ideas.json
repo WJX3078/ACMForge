@@ -1,0 +1,15 @@
+{
+  "ideas": [
+    {
+      "id": "directed_edge_bug",
+      "category": "IMPLEMENTATION_BUG",
+      "title": "只建单向边",
+      "reasoning_summary": "建图时只加了 adj[u].push_back(v)，忘记无向图要加反向边",
+      "why_plausible": "样例里双向恰好都能走到，编译运行都正常",
+      "claimed_complexity": "O(n + m)",
+      "expected_failure_patterns": ["沿反向边走更短的情况"],
+      "counterexample_shape": "边 (2,1)、(2,3)：1 到 3 必须经过反向边",
+      "target_constraints": ["n", "m"]
+    }
+  ]
+}

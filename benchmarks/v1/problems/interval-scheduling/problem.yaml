@@ -1,0 +1,67 @@
+version: "1"
+slug: interval-scheduling
+title: 会议室安排
+language: zh
+
+target:
+  rating: 1200
+  tags: ["greedy", "sorting"]
+
+summary: 选择最多的互不重叠区间。
+
+task: |
+  有 n 个活动，第 i 个活动占据时间区间 [l_i, r_i]。
+  一个活动选择方案要求任意两个被选活动的时间区间不重叠：
+  即按时间排序后，前一个活动的 r 与后一个活动的 l 满足 r \le l（端点相接允许）。
+  求最多能选择多少个活动。
+
+input_format: |
+  第一行一个整数 n。
+  接下来 n 行，每行两个整数 l_i, r_i。
+
+output_format: |
+  输出一行一个整数：最多可选活动数。
+
+constraints:
+  items:
+    - name: n
+      description: 1 \le n \le 2 \times 10^5
+    - name: l_i, r_i
+      description: 0 \le l_i \le r_i \le 3 \times 10^9（坐标超出 32 位整数范围）
+  bounds:
+    n: [1, 200000]
+    value: [0, 3000000000]
+
+samples:
+  - input: |
+      3
+      1 10
+      2 3
+      4 5
+    expected_output: "2"
+    note: 选 [2,3] 与 [4,5]，比选 [1,10] 更优。
+  - input: |
+      4
+      1 2
+      2 3
+      3 4
+      1 100
+    expected_output: "3"
+
+limits:
+  time_ms: 2000
+  memory_mb: 256
+
+intended_solution:
+  observations:
+    - 按右端点排序后，贪心选择"结束最早且与已选不冲突"的活动是最优的。
+  algorithm:
+    - 将活动按 r_i 升序排序。
+    - 依次扫描：若 l_i \ge 当前已选活动的最大右端点 last_r，则选择它并更新 last_r = r_i。
+  proof_outline:
+    - 交换论证：任何最优解中第一个活动都可替换为右端点最小的活动而不影响后续选择。
+  complexity:
+    time: O(n log n)
+    memory: O(n)
+
+assets: {}

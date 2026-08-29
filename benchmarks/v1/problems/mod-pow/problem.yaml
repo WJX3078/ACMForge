@@ -1,0 +1,65 @@
+version: "1"
+slug: mod-pow
+title: 快速幂取模
+language: zh
+
+target:
+  rating: 1300
+  tags: ["math", "number-theory"]
+
+summary: 计算 b^e mod m，其中 e 可以大到 10^18。
+
+task: |
+  给定整数 b, e, m（0 \le b < m），计算 b^e mod m。
+  约定 0^0 = 1。
+
+input_format: |
+  一行三个整数 b, e, m，以空格分隔。
+
+output_format: |
+  输出一行一个整数：b^e mod m。
+
+constraints:
+  items:
+    - name: e
+      description: 0 \le e \le 10^{18}
+    - name: m
+      description: 1 \le m \le 10^9
+    - name: b
+      description: 0 \le b < m
+  bounds:
+    n: [1, 1000000000]
+    value: [0, 1000000000]
+
+samples:
+  - input: |
+      2 10 1000
+    expected_output: "24"
+  - input: |
+      5 0 7
+    expected_output: "1"
+  - input: |
+      123 456789 1
+    expected_output: "0"
+    note: 模数为 1 时答案恒为 0。
+
+limits:
+  time_ms: 2000
+  memory_mb: 256
+
+intended_solution:
+  observations:
+    - e 的二进制拆分：b^e = 乘积 of b^{2^i} over set bits。
+    - 乘法用 long long：b, m < 10^9，乘积 < 10^{18} < 2^{63}，不溢出。
+  algorithm:
+    - 快速幂：维护 base = b mod m，result = 1；e 每次右移一位，base 平方取模，当前位为 1 时乘入 result。
+    - 特判：m = 1 时答案为 0（任何数 mod 1）。
+  proof_outline:
+    - 归纳于 e 的二进制位；模乘保持同余关系。
+  complexity:
+    time: O(log e)
+    memory: O(1)
+
+assets: {}
+
+notes: bounds 中 n 表示 m 的上限；e 上限 10^18。

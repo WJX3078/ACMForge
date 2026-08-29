@@ -1,0 +1,8 @@
+{
+  "__file__": "reference/std.cpp",
+  "idea_summary": "参考实现（mock：模拟一个一次写对的 SolverAgent）",
+  "complexity": {
+    "time": "O(见参考实现)",
+    "memory": "O(见参考实现)"
+  }
+}

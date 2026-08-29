@@ -51,6 +51,71 @@ class MutantCategory(str, Enum):
     IMPLEMENTATION_BUG = "IMPLEMENTATION_BUG"
 
 
+class MutantKind(str, Enum):
+    """变异体来源分类（mutant 质量指标按 kind 分桶）。"""
+
+    SOURCE_MUTANT = "SOURCE_MUTANT"          # 确定性源码变异（baseline）
+    LLM_IDEA_MUTANT = "LLM_IDEA_MUTANT"      # WrongIdeaSpec → 错误解（WA 类）
+    SLOW_SOLUTION = "SLOW_SOLUTION"          # 只差复杂度/常数的慢解（TLE 类）
+    IMPORTED = "IMPORTED"                    # 题目自带的错误解资产
+
+
+class FailureType(str, Enum):
+    """失败分类体系（Phase C）：每个 pipeline 失败尽可能归类。"""
+
+    SPEC_INVALID = "SPEC_INVALID"
+    LLM_ERROR = "LLM_ERROR"
+    LLM_PARSE_ERROR = "LLM_PARSE_ERROR"
+    STD_COMPILE_ERROR = "STD_COMPILE_ERROR"
+    STD_LOGIC_ERROR = "STD_LOGIC_ERROR"
+    STD_REPAIR_FAILED = "STD_REPAIR_FAILED"
+    BRUTE_COMPILE_ERROR = "BRUTE_COMPILE_ERROR"
+    BRUTE_LOGIC_ERROR = "BRUTE_LOGIC_ERROR"
+    BRUTE_TOO_SLOW = "BRUTE_TOO_SLOW"
+    GENERATOR_ERROR = "GENERATOR_ERROR"
+    GENERATOR_INVALID_INPUT = "GENERATOR_INVALID_INPUT"
+    MUTANT_COMPILE_ERROR = "MUTANT_COMPILE_ERROR"
+    MUTANT_EQUIVALENT = "MUTANT_EQUIVALENT"
+    MUTANT_TOO_WEAK = "MUTANT_TOO_WEAK"
+    TEST_GENERATION_ERROR = "TEST_GENERATION_ERROR"
+    TESTS_TOO_WEAK = "TESTS_TOO_WEAK"
+    TLE_SURVIVED = "TLE_SURVIVED"
+    MLE_SURVIVED = "MLE_SURVIVED"
+    STATEMENT_MISMATCH = "STATEMENT_MISMATCH"
+    EDITORIAL_MISMATCH = "EDITORIAL_MISMATCH"
+    RUNNER_ERROR = "RUNNER_ERROR"
+    SANDBOX_ERROR = "SANDBOX_ERROR"
+    UNKNOWN = "UNKNOWN"
+
+
+# 失败类型 → 责任主体（用于"最值得优化的 Agent"排名）
+FAILURE_OWNER: dict[FailureType, str] = {
+    FailureType.SPEC_INVALID: "spec-author",
+    FailureType.LLM_ERROR: "llm-provider",
+    FailureType.LLM_PARSE_ERROR: "prompt-schema",
+    FailureType.STD_COMPILE_ERROR: "solver-agent",
+    FailureType.STD_LOGIC_ERROR: "solver-agent",
+    FailureType.STD_REPAIR_FAILED: "solver-agent",
+    FailureType.BRUTE_COMPILE_ERROR: "brute-agent",
+    FailureType.BRUTE_LOGIC_ERROR: "brute-agent",
+    FailureType.BRUTE_TOO_SLOW: "brute-agent",
+    FailureType.GENERATOR_ERROR: "generator-agent",
+    FailureType.GENERATOR_INVALID_INPUT: "generator-agent",
+    FailureType.MUTANT_COMPILE_ERROR: "mutant-agent",
+    FailureType.MUTANT_EQUIVALENT: "mutant-agent",
+    FailureType.MUTANT_TOO_WEAK: "mutant-agent",
+    FailureType.TEST_GENERATION_ERROR: "test-designer",
+    FailureType.TESTS_TOO_WEAK: "test-designer",
+    FailureType.TLE_SURVIVED: "survivor-loop",
+    FailureType.MLE_SURVIVED: "survivor-loop",
+    FailureType.STATEMENT_MISMATCH: "content-agents",
+    FailureType.EDITORIAL_MISMATCH: "content-agents",
+    FailureType.RUNNER_ERROR: "runner",
+    FailureType.SANDBOX_ERROR: "runner",
+    FailureType.UNKNOWN: "unknown",
+}
+
+
 class NodeStatus(str, Enum):
     OK = "ok"
     FAIL = "fail"
@@ -201,6 +266,20 @@ class ProblemSpec(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class WrongIdeaSpec(BaseModel):
+    """错误思路规格（Phase E）：先想清楚"错在哪、为什么看起来对"，再写代码。"""
+
+    id: str
+    category: MutantCategory
+    title: str
+    reasoning_summary: str = ""
+    why_plausible: str = ""
+    claimed_complexity: Complexity = Field(default_factory=Complexity)
+    expected_failure_patterns: list[str] = Field(default_factory=list)
+    counterexample_shape: str = ""
+    target_constraints: list[str] = Field(default_factory=list)
+
+
 class SolutionCandidate(BaseModel):
     """一道解（std/brute）或一个变异体（wa/tle/mle）的统一记录。"""
 
@@ -212,6 +291,8 @@ class SolutionCandidate(BaseModel):
     path: str | None = None
     origin: str = "import"  # import | llm | mutation
     origin_detail: str = ""
+    mutant_kind: MutantKind | None = None
+    wrong_idea: WrongIdeaSpec | None = None  # LLM_IDEA_MUTANT 携带其思路规格
     category: MutantCategory | None = None
     description: str = ""
     expected_verdict: Verdict | None = None

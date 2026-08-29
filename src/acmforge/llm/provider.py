@@ -12,7 +12,7 @@ import re
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from acmforge.config import LLMConfig
 from acmforge.console import get_logger
@@ -20,11 +20,14 @@ from acmforge.domain.errors import LLMError
 
 logger = get_logger("acmforge.llm")
 
+# usage 回调：拿到 {"prompt_tokens": int, "completion_tokens": int, ...} 或 None
+UsageSink = Callable[[dict | None], None]
+
 
 class LLMProvider(Protocol):
     name: str
 
-    def complete(self, agent: str, system: str, user: str) -> str:
+    def complete(self, agent: str, system: str, user: str, usage_sink: UsageSink | None = None) -> str:
         """返回模型文本输出。失败抛 LLMError。"""
         ...
 
@@ -37,7 +40,7 @@ class OpenAICompatProvider:
         self.api_key = api_key
         self.base_url = config.base_url.rstrip("/")
 
-    def complete(self, agent: str, system: str, user: str) -> str:
+    def complete(self, agent: str, system: str, user: str, usage_sink: UsageSink | None = None) -> str:
         payload = {
             "model": self.config.model,
             "messages": [
@@ -49,9 +52,14 @@ class OpenAICompatProvider:
         last_err: Exception | None = None
         for attempt in range(1, self.config.max_retries + 1):
             try:
-                return self._post(payload)
+                content, usage = self._post(payload)
+                if usage_sink is not None:
+                    usage_sink(usage)
+                return content
             except LLMError as e:
                 last_err = e
+                if usage_sink is not None:
+                    usage_sink(None)
                 logger.warning(
                     "llm call failed (agent=%s attempt=%d/%d): %s",
                     agent,
@@ -62,7 +70,7 @@ class OpenAICompatProvider:
                 time.sleep(min(2**attempt, 10))
         raise LLMError(f"agent={agent} 重试耗尽: {last_err}")
 
-    def _post(self, payload: dict[str, Any]) -> str:
+    def _post(self, payload: dict[str, Any]) -> tuple[str, dict | None]:
         req = urllib.request.Request(
             f"{self.base_url}/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
@@ -89,7 +97,8 @@ class OpenAICompatProvider:
             raise LLMError(f"响应结构异常: {json.dumps(data)[:500]}") from e
         if not isinstance(content, str):
             raise LLMError("响应 content 不是字符串")
-        return content
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+        return content, usage
 
 
 class MockProvider:
@@ -100,7 +109,7 @@ class MockProvider:
     def __init__(self, responses: dict[str, str]):
         self.responses = responses
 
-    def complete(self, agent: str, system: str, user: str) -> str:
+    def complete(self, agent: str, system: str, user: str, usage_sink: UsageSink | None = None) -> str:
         if agent not in self.responses:
             raise LLMError(f"MockProvider 未配置 agent={agent} 的响应")
         return self.responses[agent]

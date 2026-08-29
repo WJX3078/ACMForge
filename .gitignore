@@ -16,3 +16,6 @@ workspace/
 # 密钥
 .env
 .acmforge_build/
+
+# 用户本地的前端工程（未纳入本仓库管理；含 node_modules）
+acmforge/

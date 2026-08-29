@@ -13,8 +13,13 @@ from dataclasses import dataclass
 
 from acmforge.domain.models import MutantCategory
 
-# 跳过这些行，避免无意义变异
-_SKIP_LINE_RE = re.compile(r"(^\s*#|for\s*\(|while\s*\(|using\s+namespace)")
+# 跳过这些行，避免无意义变异：
+# - #include / for / while / using：会产生越界或纯语法变化
+# - 纯注释行：改注释 = 等价变异
+# - 容器声明（vector/pair/deque<long long> 等）：元素类型缩窄往往是等价变异
+_SKIP_LINE_RE = re.compile(
+    r"(^\s*#|^\s*//|for\s*\(|while\s*\(|using\s+namespace|vector\s*<|pair\s*<|deque\s*<)"
+)
 
 
 @dataclass
@@ -59,19 +64,19 @@ OPERATORS: list[MutationOperator] = [
     ),
     MutationOperator(
         name="max_to_min",
-        pattern=r"\bstd::max\b",
-        replacement="std::min",
+        pattern=r"\b(max)\s*\(",
+        replacement="min(",
         category=MutantCategory.WRONG_GREEDY,
-        description="贪心方向反转（std::max → std::min）",
+        description="贪心方向反转（max → min，兼容 using namespace std 的裸写法）",
         expected_verdict="WA",
         max_sites=2,
     ),
     MutationOperator(
         name="min_to_max",
-        pattern=r"\bstd::min\b",
-        replacement="std::max",
+        pattern=r"\b(min)\s*\(",
+        replacement="max(",
         category=MutantCategory.WRONG_GREEDY,
-        description="贪心方向反转（std::min → std::max）",
+        description="贪心方向反转（min → max，兼容裸写法）",
         expected_verdict="WA",
         max_sites=2,
     ),
@@ -81,15 +86,6 @@ OPERATORS: list[MutationOperator] = [
         replacement="-=",
         category=MutantCategory.WRONG_TRANSITION,
         description="状态转移符号写反（+= → -=）",
-        expected_verdict="WA",
-        max_sites=1,
-    ),
-    MutationOperator(
-        name="lt_to_le",
-        pattern=r" < ",
-        replacement=" <= ",
-        category=MutantCategory.BOUNDARY,
-        description="边界条件 off-by-one（< → <=）",
         expected_verdict="WA",
         max_sites=1,
     ),

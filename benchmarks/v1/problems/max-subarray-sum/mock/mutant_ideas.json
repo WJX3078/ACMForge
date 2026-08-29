@@ -1,0 +1,26 @@
+{
+  "ideas": [
+    {
+      "id": "int_sum_overflow",
+      "category": "OVERFLOW",
+      "title": "用 int 保存子段和",
+      "reasoning_summary": "累加器与答案用 int，元素接近 1e9 且 n 很大时必然溢出",
+      "why_plausible": "小样例全都能过，直觉上 int 够用",
+      "claimed_complexity": "O(n)",
+      "expected_failure_patterns": ["元素大且 n 大时累加溢出"],
+      "counterexample_shape": "n=2e5 且元素接近 1e9",
+      "target_constraints": ["n", "value"]
+    },
+    {
+      "id": "allow_empty_subarray",
+      "category": "BOUNDARY",
+      "title": "答案初始化为 0",
+      "reasoning_summary": "best 初始为 0，隐含允许空子段，全负数组会输出 0",
+      "why_plausible": "多数随机数组答案为正",
+      "claimed_complexity": "O(n)",
+      "expected_failure_patterns": ["全负数组"],
+      "counterexample_shape": "n 个全为负数的数组",
+      "target_constraints": ["value"]
+    }
+  ]
+}

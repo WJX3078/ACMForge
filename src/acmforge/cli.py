@@ -229,6 +229,49 @@ def run(
 
 
 # ---------------------------------------------------------------------------
+# eval（Phase B：批量评测 Agent 可靠性）
+# ---------------------------------------------------------------------------
+
+
+@app.command("eval")
+def eval_cmd(
+    dataset: Path = typer.Argument(..., exists=True, help="数据集目录（含 dataset.json）"),
+    provider: str = typer.Option("auto", "--provider", help="auto | llm | mock"),
+    preset: str = typer.Option("standard", "--preset", help="standard | smoke"),
+    limit: Optional[int] = typer.Option(None, "--limit", help="只跑前 N 题"),
+    config: Optional[Path] = typer.Option(None, "--config", help="覆盖配置文件"),
+    output: Optional[Path] = typer.Option(None, "--output", help="输出目录（默认 evals/<eval_id>）"),
+) -> None:
+    """批量评测：对数据集中每道题跑完整流水线并统计可靠性指标。"""
+    from acmforge.eval.report import aggregate
+    from acmforge.eval.runner import run_eval
+
+    try:
+        summary = run_eval(
+            dataset,
+            provider=provider,
+            limit=limit,
+            preset=preset,
+            config_path=config,
+            output_dir=output,
+        )
+    except AcmforgeError as e:
+        typer.secho(f"✗ {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    agg = aggregate(summary.problems)
+    n = agg["problem_count"]
+    typer.secho(f"✓ eval {summary.eval_id} 完成", fg=typer.colors.GREEN, bold=True)
+    typer.echo(f"  Pipeline success:       {agg['pipeline_success']}/{n} = {agg['pipeline_success'] / n * 100 if n else 0:.0f}%")
+    typer.echo(f"  STD compile:            {agg['std_compile']}/{n}")
+    typer.echo(f"  STD first-pass correct: {agg['std_first_pass_correct']}/{n}")
+    typer.echo(f"  Mutant compile/kill:    {agg['mutant_compile_rate']:.0%} / {agg['mutant_kill_rate']:.0%}")
+    if agg.get("tle_kill_rate") is not None:
+        typer.echo(f"  TLE kill:               {agg['tle_kill_rate']:.0%}")
+    typer.echo(f"  报告: {(output or Path('evals') / summary.eval_id)}")
+
+
+# ---------------------------------------------------------------------------
 # resume / inspect / runs
 # ---------------------------------------------------------------------------
 

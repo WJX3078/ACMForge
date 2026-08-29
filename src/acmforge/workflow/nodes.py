@@ -14,8 +14,10 @@ from acmforge.config import AppConfig
 from acmforge.console import get_logger
 from acmforge.domain.errors import SpecError
 from acmforge.domain.models import (
+    Complexity,
     ExecutionResult,
     MutantCategory,
+    MutantKind,
     KillRecord,
     NodeResult,
     NodeStatus,
@@ -25,6 +27,7 @@ from acmforge.domain.models import (
     TestCaseRecord,
     TestStrategy,
     Verdict,
+    WrongIdeaSpec,
 )
 from acmforge.fuzz.differential import DifferentialFuzzer, make_small_cases
 from acmforge.fuzz.gen_runner import GenRunner
@@ -206,9 +209,11 @@ def node_prepare_solutions(ctx: NodeContext) -> NodeResult:
         gmodes = GenRunner(gen_path).modes()  # 询问支持的模式
     elif use_llm:
         from acmforge.agents.generator import GeneratorAgent
+        from acmforge.fuzz.gen_runner import assert_gen_safe
 
         agent = GeneratorAgent(ctx.provider, ctx.ws.logs_dir / "llm_calls.jsonl")
         sol, _meta = agent.design(spec)
+        assert_gen_safe(sol.code)  # LLM 生成器落盘前的静态安全检查
         gen_path = sol_dir / "gen.py"
         gen_path.write_text(sol.code, encoding="utf-8", newline="\n")
         gcode, gmodes, gorigin = sol.code, sol.modes, "llm"
@@ -328,7 +333,7 @@ def node_compile_solutions(ctx: NodeContext) -> NodeResult:
         result.error = f"brute 编译失败:\n{brute_info['stderr']}"
         return result
 
-    manifest["std"].update({"compile": std_info})
+    manifest["std"].update({"compile": std_info, "compile_repairs": attempts})
     manifest["brute"].update({"compile": brute_info})
     ctx.write_manifest("solutions", manifest)
 
@@ -524,10 +529,14 @@ def node_generate_mutants(ctx: NodeContext) -> NodeResult:
 
     candidates: list[SolutionCandidate] = []
     seen_hashes: set[str] = set()
+    duplicates_dropped = 0
+    ideas_accepted: list[dict] = []
 
     def add_candidate(c: SolutionCandidate) -> bool:
+        nonlocal duplicates_dropped
         h = sha256_text(c.code)
         if h in seen_hashes:
+            duplicates_dropped += 1
             return False
         seen_hashes.add(h)
         d = ctx.ws.mutants_dir / c.id
@@ -555,20 +564,22 @@ def node_generate_mutants(ctx: NodeContext) -> NodeResult:
         except ValueError:
             cat = MutantCategory.IMPLEMENTATION_BUG
         expected = (m.get("expected_verdict", "WA") if isinstance(m, dict) else "WA").upper()
+        is_tle = expected == "TLE"
         add_candidate(
             SolutionCandidate(
                 id=f"mutant_import_{i:03d}",
-                role=SolutionRole.TLE if expected == "TLE" else SolutionRole.WA,
+                role=SolutionRole.TLE if is_tle else SolutionRole.WA,
                 code=code,
                 origin="import",
                 origin_detail=rel,
+                mutant_kind=MutantKind.SLOW_SOLUTION if is_tle else MutantKind.IMPORTED,
                 category=cat,
                 description=m.get("description", rel) if isinstance(m, dict) else rel,
-                expected_verdict=Verdict.WA if expected != "TLE" else Verdict.TLE,
+                expected_verdict=Verdict.TLE if is_tle else Verdict.WA,
             )
         )
 
-    # 2) 源码变异（确定性）
+    # 2) 源码变异（确定性 baseline，kind=SOURCE_MUTANT）
     if ctx.cfg.mutants.source_mutations:
         for op, site, mutated in apply_mutations(std_code):
             add_candidate(
@@ -578,38 +589,67 @@ def node_generate_mutants(ctx: NodeContext) -> NodeResult:
                     code=mutated,
                     origin="mutation",
                     origin_detail=f"operator={op.name} site={site}",
+                    mutant_kind=MutantKind.SOURCE_MUTANT,
                     category=op.category,
                     description=op.description,
                     expected_verdict=Verdict.WA if op.expected_verdict != "TLE" else Verdict.TLE,
                 )
             )
 
-    # 3) LLM 错误解
+    # 3) LLM 错误解（两段式：ProblemSpec → WrongIdeaSpec → Wrong Solution）
     if ctx.provider is not None and not ctx.cfg.offline and ctx.cfg.mutants.llm_count > 0:
-        from acmforge.agents.mutant import MutantAgent
+        from acmforge.agents.mutant import MutantIdeaAgent, MutantSolutionAgent
 
-        agent = MutantAgent(ctx.provider, ctx.ws.logs_dir / "llm_calls.jsonl")
+        idea_agent = MutantIdeaAgent(ctx.provider, ctx.ws.logs_dir / "llm_calls.jsonl")
+        sol_agent = MutantSolutionAgent(ctx.provider, ctx.ws.logs_dir / "llm_calls.jsonl")
         try:
-            set_out, _meta = agent.design(ctx.spec, std_code, ctx.cfg.mutants.llm_count)
-            for i, m in enumerate(set_out.mutants, 1):
+            ideas_out, _meta = idea_agent.design_ideas(ctx.spec, std_code, ctx.cfg.mutants.llm_count)
+        except Exception as e:
+            ctx.warn(result, f"WrongIdeaSpec 生成失败（继续用已有变异体）: {truncate(str(e), 300)}")
+            ideas_out = None
+
+        if ideas_out is not None:
+            for idea in ideas_out.ideas[: ctx.cfg.mutants.llm_count]:
                 try:
-                    cat = MutantCategory(m.category)
+                    cat = MutantCategory(idea.category)
                 except ValueError:
                     cat = MutantCategory.IMPLEMENTATION_BUG
-                add_candidate(
+                idea_dict = idea.model_dump()
+                idea_dict["category"] = cat.value
+                idea_dict["claimed_complexity"] = {"time": idea.claimed_complexity, "memory": ""}
+                try:
+                    sol_out, _m = sol_agent.design_for_idea(ctx.spec, std_code, idea_dict)
+                except Exception as e:
+                    ctx.warn(result, f"mutant 代码生成失败（idea={idea.id}）: {truncate(str(e), 200)}")
+                    continue
+                is_tle = sol_out.expected_verdict == "TLE" or cat == MutantCategory.TLE
+                ok = add_candidate(
                     SolutionCandidate(
-                        id=f"mutant_llm_{i:03d}",
-                        role=SolutionRole.TLE if m.expected_verdict == "TLE" else SolutionRole.WA,
-                        code=m.code,
+                        id=f"mutant_idea_{idea.id}",
+                        role=SolutionRole.TLE if is_tle else SolutionRole.WA,
+                        code=sol_out.code,
                         origin="llm",
+                        origin_detail=f"wrong_idea={idea.id}",
+                        mutant_kind=MutantKind.SLOW_SOLUTION if is_tle else MutantKind.LLM_IDEA_MUTANT,
+                        wrong_idea=WrongIdeaSpec(
+                            id=idea.id,
+                            category=cat,
+                            title=idea.title,
+                            reasoning_summary=idea.reasoning_summary,
+                            why_plausible=idea.why_plausible,
+                            claimed_complexity=Complexity(time=idea.claimed_complexity),
+                            expected_failure_patterns=idea.expected_failure_patterns,
+                            counterexample_shape=idea.counterexample_shape,
+                            target_constraints=idea.target_constraints,
+                        ),
                         category=cat,
-                        description=m.description,
-                        expected_verdict=Verdict.WA if m.expected_verdict != "TLE" else Verdict.TLE,
-                        idea_summary=m.description,
+                        description=sol_out.description or idea.title,
+                        expected_verdict=Verdict.TLE if is_tle else Verdict.WA,
+                        idea_summary=idea.title,
                     )
                 )
-        except Exception as e:
-            ctx.warn(result, f"LLM mutant 生成失败（继续用已有变异体）: {e}")
+                if ok:
+                    ideas_accepted.append(idea_dict)
 
     # 超出上限的丢弃
     if len(candidates) > ctx.cfg.mutants.max_total:
@@ -623,17 +663,36 @@ def node_generate_mutants(ctx: NodeContext) -> NodeResult:
         result.error = "没有任何可用的变异体（全部编译失败或为空）"
         return result
 
+    written = len(candidates)
+    compile_failed = sum(1 for c in candidates if c.compile_ok is False)
     ctx.write_manifest(
         "mutants",
         {
             "candidates": [c.model_dump(mode="json") for c in candidates],
             "enabled_ids": [c.id for c in enabled],
+            "ideas_accepted": ideas_accepted,
+            "metrics": {
+                "total": written + duplicates_dropped,
+                "written": written,
+                "duplicates_dropped": duplicates_dropped,
+                "compile_failed": compile_failed,
+                "enabled": len(enabled),
+                "kinds": {
+                    k: sum(1 for c in candidates if c.enabled and c.mutant_kind and c.mutant_kind.value == k)
+                    for k in ("SOURCE_MUTANT", "LLM_IDEA_MUTANT", "SLOW_SOLUTION", "IMPORTED")
+                },
+            },
         },
     )
     result.metrics = {
-        "total": len(candidates),
+        "total": written + duplicates_dropped,
         "enabled": len(enabled),
-        "compile_failed": sum(1 for c in candidates if c.compile_ok is False),
+        "duplicates_dropped": duplicates_dropped,
+        "compile_failed": compile_failed,
+        "kinds": {
+            k: sum(1 for c in candidates if c.enabled and c.mutant_kind and c.mutant_kind.value == k)
+            for k in ("SOURCE_MUTANT", "LLM_IDEA_MUTANT", "SLOW_SOLUTION", "IMPORTED")
+        },
     }
     return result
 
@@ -834,8 +893,11 @@ def node_generate_candidates(ctx: NodeContext) -> NodeResult:
     existing = ctx.manifest("corpus") or {"records": []}
     records = [TestCaseRecord(**r) for r in existing.get("records", [])]
     max_n = len(records)
+    existing_strategies = {r.strategy for r in records}
 
     for s in sample_strategies:
+        if s.name in existing_strategies:
+            continue  # resume 重跑：样例已在语料中，跳过（幂等，不重写文件）
         text = s.params["text"]
         tid = f"{s.name}_{max_n + 1:04d}"
         max_n += 1
@@ -880,6 +942,49 @@ def node_generate_candidates(ctx: NodeContext) -> NodeResult:
 # ---------------------------------------------------------------------------
 
 
+def _analyze_survivors(
+    ctx: NodeContext, survivor_ids: list[str], candidates: dict[str, dict]
+) -> list[dict]:
+    """调用 SurvivorAnalyzer 分析幸存者；失败返回空列表（由调用方退回随机策略）。"""
+    from acmforge.agents.survivor import SurvivorAnalyzerAgent
+
+    modes = ctx.manifest("solutions")["gen"]["modes"]
+    strategies = [
+        f"{s['name']} (mode={s['mode']}, params={s.get('params')})"
+        for s in (ctx.manifest("test_plan") or {}).get("strategies", [])
+    ]
+    survivors = []
+    for mid in survivor_ids:
+        c = candidates[mid]
+        survivors.append(
+            {
+                "id": mid,
+                "category": c.get("category", ""),
+                "description": c.get("description", ""),
+                "expected_verdict": str(c.get("expected_verdict", "WA")),
+            }
+        )
+    try:
+        agent = SurvivorAnalyzerAgent(ctx.provider, ctx.ws.logs_dir / "llm_calls.jsonl")
+        out, _meta = agent.analyze(ctx.spec, modes, survivors, strategies)
+        return [
+            {
+                "target_mutant_id": a.target_mutant_id,
+                "why_survived": a.why_survived,
+                "required_structure": a.required_structure,
+                "required_scale": a.required_scale,
+                "required_edge_case": a.required_edge_case,
+                "mode": a.mode,
+                "generator_parameters": a.generator_parameters,
+                "purpose": a.purpose,
+            }
+            for a in out.analyses
+        ]
+    except Exception as e:
+        logger.warning("survivor 分析失败: %s", e)
+        return []
+
+
 def node_kill_matrix(ctx: NodeContext) -> NodeResult:
     from acmforge.runner.local import LocalRunner
 
@@ -901,12 +1006,20 @@ def node_kill_matrix(ctx: NodeContext) -> NodeResult:
     rounds = 0
     selection = None
     kill_rate = 0.0
+    rounds_log: list[dict] = []
+
+    def _survivors_now() -> list[str]:
+        killed_set = {r.solution_id for r in all_records if r.killed}
+        return [m for m in enabled_ids if m not in killed_set]
 
     for round_no in range(1, ctx.cfg.tests.max_rounds + 1):
         rounds = round_no
         corpus_records = [TestCaseRecord(**r) for r in (ctx.manifest("corpus") or {}).get("records", [])]
 
         for mid in enabled_ids:
+            # 已在早前轮次被击杀的 mutant 跳过增量评估
+            if any(r.solution_id == mid and r.killed for r in all_records):
+                continue
             cand = candidates[mid]
             expected_tle = cand["expected_verdict"] == "TLE"
             ordered = order_candidates_for_mutant(corpus_records, expected_tle)
@@ -941,25 +1054,75 @@ def node_kill_matrix(ctx: NodeContext) -> NodeResult:
         selection = greedy_select(all_records, mutant_ids, must_include)
         kill_rate = selection.kill_rate
         logger.info("round %d: kill_rate=%.3f unkillable=%d", round_no, kill_rate, len(selection.unkillable))
+
+        round_entry: dict = {
+            "round": round_no,
+            "kill_rate": kill_rate,
+            "survivors": _survivors_now(),
+            "action": "done",
+            "analyses": [],
+        }
+
         if kill_rate >= ctx.cfg.tests.min_kill_rate:
+            rounds_log.append(round_entry)
             break
 
-        # 追加一轮随机候选（确定性种子延续）
-        random_strats = [
-            TestStrategy(**s)
-            for s in (ctx.manifest("test_plan") or {}).get("strategies", [])
-            if s["mode"] == "random"
-        ]
-        if not random_strats:
+        if round_no >= ctx.cfg.tests.max_rounds:
+            round_entry["action"] = "max_rounds_reached"
+            rounds_log.append(round_entry)
             break
+
+        # 幸存者反馈闭环（Phase F）：优先做定向分析；无 LLM 时退回随机追加
+        targeted: list[TestStrategy] = []
+        if ctx.provider is not None and not ctx.cfg.offline and round_entry["survivors"]:
+            analyses = _analyze_survivors(ctx, round_entry["survivors"], candidates)
+            round_entry["analyses"] = analyses
+            known_modes = set(ctx.manifest("solutions")["gen"]["modes"])
+            for a in analyses:
+                if a.get("mode") not in known_modes:
+                    ctx.warn(result, f"survivor 分析给出未知模式 {a.get('mode')!r}，已丢弃（{a.get('target_mutant_id')}）")
+                    continue
+                targeted.append(
+                    TestStrategy(
+                        name=f"targeted_r{round_no}_{a.get('target_mutant_id', 'x')}",
+                        purpose=a.get("purpose") or a.get("why_survived", "")[:200],
+                        mode=a["mode"],
+                        params=a.get("generator_parameters") or {},
+                        count=1,
+                        priority=100,
+                        origin="survivor",
+                    )
+                )
+            round_entry["action"] = "survivor_analysis" if targeted else "survivor_analysis_failed"
+
+        if not targeted:
+            # fallback：随机追加（确定性种子延续）
+            random_strats = [
+                TestStrategy(**s)
+                for s in (ctx.manifest("test_plan") or {}).get("strategies", [])
+                if s["mode"] == "random"
+            ]
+            if not random_strats:
+                round_entry["action"] = "no_fallback_strategies"
+                rounds_log.append(round_entry)
+                break
+            targeted = random_strats
+            round_entry["action"] = "random_batch"
+
+        # 把本轮策略固化进 test_plan（可回溯：为什么生成这些测试）
+        plan = ctx.manifest("test_plan") or {"strategies": []}
+        plan["strategies"].extend([t.model_dump(mode="json") for t in targeted])
+        ctx.write_manifest("test_plan", plan)
+
         _, warns = generate_corpus_batch(
             ctx,
-            random_strats,
+            targeted,
             start_seed=ctx.cfg.fuzz.seed + 2_000_000 * round_no,
             tid_prefix=f"r{round_no}_",
         )
         for w in warns:
             ctx.warn(result, w)
+        rounds_log.append(round_entry)
 
     if selection is None:
         result.status = NodeStatus.FAIL
@@ -973,6 +1136,7 @@ def node_kill_matrix(ctx: NodeContext) -> NodeResult:
             "records": [r.model_dump(mode="json") for r in all_records],
             "selection": selection.model_dump(mode="json"),
             "rounds": rounds,
+            "rounds_log": rounds_log,
             "summary": matrix_summary,
         },
     )

@@ -1,0 +1,5 @@
+{
+  "__file__": "wrong_overflow.cpp",
+  "description": "按 int_sum_overflow 思路实现：累加器用 int（mock 对不同 idea 返回同一份代码，用于验证去重）",
+  "expected_verdict": "WA"
+}
