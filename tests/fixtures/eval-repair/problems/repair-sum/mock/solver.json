@@ -1,0 +1,14 @@
+{
+  "__sequence__": [
+    {
+      "code": "#include <bits/stdc++.h>\nusing namespace std;\n// 错误版本：忽略了负数（第一次调用返回这个）\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    cin >> n;\n    long long s = 0;\n    for (int i = 0; i < n; ++i) {\n        long long x;\n        cin >> x;\n        if (x > 0) s += x;\n    }\n    cout << s << \"\\n\";\n    return 0;\n}\n",
+      "idea_summary": "只累加正数（mock 故意写错，等待 repair）",
+      "complexity": {"time": "O(n)", "memory": "O(1)"}
+    },
+    {
+      "__file__": "reference/std.cpp",
+      "idea_summary": "修复版：正确累加所有元素",
+      "complexity": {"time": "O(n)", "memory": "O(1)"}
+    }
+  ]
+}

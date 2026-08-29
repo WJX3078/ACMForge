@@ -457,6 +457,9 @@ def node_differential_fuzz(ctx: NodeContext) -> NodeResult:
             "idea_summary": sol.idea_summary,
             "compile": {"ok": True, "exe": cr.exe_path, "stderr": ""},
         }
+        # 修复版本成为当前有效版本后必须立即持久化，
+        # 否则后续节点（mutants/candidates/final_verify/package）重读 manifest 会用回旧 std
+        ctx.write_manifest("solutions", manifest)
         # 重新全量对拍
         summary = fuzzer.run(cases)
 
