@@ -139,13 +139,19 @@ def judge_against_answer(
 
 
 def order_candidates_for_mutant(
-    candidates: list[TestCaseRecord], expected_tle: bool
+    candidates: list[TestCaseRecord],
+    expected_tle: bool,
+    targeted_strategies: set[str] | None = None,
 ) -> list[TestCaseRecord]:
-    """评估顺序：优先级高的先测；TLE 变异体在同级里先跑大规模，其余先跑小规模。"""
+    """评估顺序：定向策略（target_mutants 命中该变异体）最优先；
+    其次按优先级；TLE 变异体在同级里先跑大规模，其余先跑小规模。"""
+
+    targeted = targeted_strategies or set()
 
     def key(tc: TestCaseRecord):
         size = -tc.size_bytes if expected_tle else tc.size_bytes
-        return (-tc.priority, size)
+        is_targeted = 0 if tc.strategy in targeted else 1
+        return (is_targeted, -tc.priority, size)
 
     return sorted(candidates, key=key)
 
@@ -1170,14 +1176,29 @@ def node_kill_matrix(ctx: NodeContext) -> NodeResult:
         if r.strategy.startswith("sample_") or r.strategy in ("min", "max") or r.priority >= 80:
             must_include.append(r.id)
 
-    all_records: list[KillRecord] = []
+    # P0-10：以 (testcase_id, solution_id) 为唯一键存储，杜绝多轮重复计数
+    records_by_pair: dict[tuple[str, str], KillRecord] = {}
     rounds = 0
     selection = None
     kill_rate = 0.0
     rounds_log: list[dict] = []
 
+    # P0-12：target_mutants 调度 —— mutant -> 标注定向它的策略名集合
+    strategies_all = [TestStrategy(**st) for st in (ctx.manifest("test_plan") or {}).get("strategies", [])]
+    target_map: dict[str, set[str]] = {}
+    known_mutant_ids = set(candidates.keys())
+    for st in strategies_all:
+        for tmid in st.target_mutants:
+            if tmid not in known_mutant_ids:
+                ctx.warn(result, f"策略 {st.name} 的 target_mutant {tmid!r} 不在已启用变异体中，忽略")
+                continue
+            target_map.setdefault(tmid, set()).add(st.name)
+
+    def _all_records() -> list[KillRecord]:
+        return list(records_by_pair.values())
+
     def _survivors_now() -> list[str]:
-        killed_set = {r.solution_id for r in all_records if r.killed}
+        killed_set = {r.solution_id for r in records_by_pair.values() if r.killed}
         return [m for m in enabled_ids if m not in killed_set]
 
     for round_no in range(1, ctx.cfg.tests.max_rounds + 1):
@@ -1186,14 +1207,18 @@ def node_kill_matrix(ctx: NodeContext) -> NodeResult:
 
         for mid in enabled_ids:
             # 已在早前轮次被击杀的 mutant 跳过增量评估
-            if any(r.solution_id == mid and r.killed for r in all_records):
+            if any(r.solution_id == mid and r.killed for r in records_by_pair.values()):
                 continue
             cand = candidates[mid]
-            expected_tle = cand["expected_verdict"] == "TLE"
-            ordered = order_candidates_for_mutant(corpus_records, expected_tle)
+            expected_tle = _parse_verdict(cand.get("expected_verdict")) == Verdict.TLE
+            targeted_strategies = target_map.get(mid, set())
+            ordered = order_candidates_for_mutant(corpus_records, expected_tle, targeted_strategies)
             budget = ctx.cfg.tests.per_mutant_eval_budget
             kills = 0
             for tc in ordered:
+                # P0-10：只评估尚未评估过的 (test, mutant) 组合
+                if (tc.id, mid) in records_by_pair:
+                    continue
                 if budget <= 0 or kills >= 3:
                     break
                 budget -= 1
@@ -1209,19 +1234,18 @@ def node_kill_matrix(ctx: NodeContext) -> NodeResult:
                 if killed:
                     kills += 1
                 expected_verdict = _parse_verdict(candidates[mid].get("expected_verdict"))
-                all_records.append(
-                    KillRecord(
-                        testcase_id=tc.id,
-                        solution_id=mid,
-                        verdict=verdict,
-                        runtime_ms=er.runtime_ms,
-                        memory_kb=er.memory_kb,
-                        killed=killed,
-                        expected_verdict=expected_verdict,
-                        expected_failure_hit=(verdict == expected_verdict) if expected_verdict else False,
-                    )
+                records_by_pair[(tc.id, mid)] = KillRecord(
+                    testcase_id=tc.id,
+                    solution_id=mid,
+                    verdict=verdict,
+                    runtime_ms=er.runtime_ms,
+                    memory_kb=er.memory_kb,
+                    killed=killed,
+                    expected_verdict=expected_verdict,
+                    expected_failure_hit=(verdict == expected_verdict) if expected_verdict else False,
                 )
 
+        all_records = _all_records()
         mutant_ids = list(candidates.keys())
         selection = greedy_select(all_records, mutant_ids, must_include)
         kill_rate = selection.kill_rate
@@ -1301,7 +1325,18 @@ def node_kill_matrix(ctx: NodeContext) -> NodeResult:
         result.error = "kill matrix 未产生任何结果"
         return result
 
+    all_records = _all_records()
     matrix_summary = summarize_kill_matrix(all_records, list(candidates.keys()))
+    # P0-12：定向策略命中报告 —— "策略 S 标注 target=M" 时 S 的测试是否真的杀了 M
+    target_hits = []
+    for st in strategies_all:
+        for tmid in st.target_mutants:
+            st_tests = {r.id for r in (ctx.manifest("corpus") or {}).get("records", []) if r.strategy == st.name}
+            hit = any(
+                rec.killed and rec.solution_id == tmid and rec.testcase_id in st_tests
+                for rec in records_by_pair.values()
+            )
+            target_hits.append({"strategy": st.name, "target_mutant": tmid, "hit": hit})
     ctx.write_manifest(
         "kill_matrix",
         {
@@ -1309,6 +1344,7 @@ def node_kill_matrix(ctx: NodeContext) -> NodeResult:
             "selection": selection.model_dump(mode="json"),
             "rounds": rounds,
             "rounds_log": rounds_log,
+            "target_hits": target_hits,
             "summary": matrix_summary,
         },
     )

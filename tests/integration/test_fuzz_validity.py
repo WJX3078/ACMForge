@@ -8,7 +8,7 @@ import yaml
 
 from acmforge.domain.models import FailureType
 from acmforge.eval.runner import run_eval
-from acmforge.fuzz.differential import FuzzSummary, build_fuzz_plan
+from acmforge.fuzz.differential import build_fuzz_plan
 from acmforge.config import FuzzConfig
 from acmforge.validator import BuiltinValidator
 from acmforge.domain.models import ProblemSpec

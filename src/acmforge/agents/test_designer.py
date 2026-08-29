@@ -21,9 +21,13 @@ class TestDesignerAgent(BaseAgent):
             "modes": ", ".join(modes),
             "mutants": [
                 {
-                    "category": m.get("category", ""),
+                    "id": m.get("id", ""),
+                    "category": (m.get("category") or {}).get("value", m.get("category", ""))
+                    if isinstance(m.get("category"), dict)
+                    else m.get("category", ""),
                     "description": m.get("description", ""),
                     "expected_verdict": m.get("expected_verdict", "WA"),
+                    "origin": m.get("origin", ""),
                 }
                 for m in mutants
             ],

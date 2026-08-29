@@ -3,7 +3,6 @@
 
 import argparse
 import json
-import random
 import sys
 
 MODES = ["min", "small"]
