@@ -48,6 +48,16 @@ class FuzzConfig(BaseModel):
     seed: int = 42
     shrink: bool = True
     shrink_max_evals: int = 200
+    # P0-7：有效性门禁 —— 有效 case 占比不足或 oracle 失败过多时必须 FAIL
+    min_success_ratio: float = 0.95
+    max_oracle_errors: int = 0
+    # P0-8：每个 generator 模式的最少覆盖 case 数（暴力可缩小的模式）
+    per_mode_cases: int = 20
+    # P0-9：repair 之后的 fresh / holdout 对拍（seed 偏移保证互不重叠）
+    fresh_cases_after_repair: int = 300
+    holdout_cases_after_repair: int = 200
+    fresh_seed_offset: int = 7_000_000
+    holdout_seed_offset: int = 9_000_000
 
 
 class MutantsConfig(BaseModel):

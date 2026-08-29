@@ -74,6 +74,7 @@ class FailureType(str, Enum):
     BRUTE_TOO_SLOW = "BRUTE_TOO_SLOW"
     GENERATOR_ERROR = "GENERATOR_ERROR"
     GENERATOR_INVALID_INPUT = "GENERATOR_INVALID_INPUT"
+    FUZZ_INVALID = "FUZZ_INVALID"
     MUTANT_COMPILE_ERROR = "MUTANT_COMPILE_ERROR"
     MUTANT_EQUIVALENT = "MUTANT_EQUIVALENT"
     MUTANT_TOO_WEAK = "MUTANT_TOO_WEAK"
@@ -101,6 +102,7 @@ FAILURE_OWNER: dict[FailureType, str] = {
     FailureType.BRUTE_TOO_SLOW: "brute-agent",
     FailureType.GENERATOR_ERROR: "generator-agent",
     FailureType.GENERATOR_INVALID_INPUT: "generator-agent",
+    FailureType.FUZZ_INVALID: "runner",
     FailureType.MUTANT_COMPILE_ERROR: "mutant-agent",
     FailureType.MUTANT_EQUIVALENT: "mutant-agent",
     FailureType.MUTANT_TOO_WEAK: "mutant-agent",

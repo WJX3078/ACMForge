@@ -156,6 +156,9 @@ def run(
     if smoke:
         cfg.fuzz.smoke_cases = 40
         cfg.fuzz.small_n = 12
+        cfg.fuzz.per_mode_cases = 5
+        cfg.fuzz.fresh_cases_after_repair = 20
+        cfg.fuzz.holdout_cases_after_repair = 20
         cfg.tests.candidate_batch = 8
         cfg.tests.per_mutant_eval_budget = 18
         cfg.benchmark.repeats = 1

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import random
 import shutil
 from pathlib import Path
 
@@ -29,7 +30,11 @@ from acmforge.domain.models import (
     Verdict,
     WrongIdeaSpec,
 )
-from acmforge.fuzz.differential import DifferentialFuzzer, make_small_cases
+from acmforge.fuzz.differential import (
+    DifferentialFuzzer,
+    FuzzSummary,
+    build_fuzz_plan,
+)
 from acmforge.fuzz.gen_runner import GenRunner
 from acmforge.fuzz.shrinker import shrink_input
 from acmforge.mutation.operators import apply_mutations
@@ -366,24 +371,75 @@ def node_differential_fuzz(ctx: NodeContext) -> NodeResult:
     modes = manifest["gen"]["modes"]
     runner = LocalRunner()
     tl = ctx.spec.limits.time_ms
+    ml = ctx.spec.limits.memory_mb
 
     def run_std(data: bytes) -> ExecutionResult:
-        return runner.run(std_exe, stdin_bytes=data, timeout_ms=tl)
+        return runner.run(std_exe, stdin_bytes=data, timeout_ms=tl, memory_mb=ml)
 
     def run_brute(data: bytes) -> ExecutionResult:
-        return runner.run(brute_exe, stdin_bytes=data, timeout_ms=max(tl * 10, 30000))
+        return runner.run(brute_exe, stdin_bytes=data, timeout_ms=max(tl * 10, 30000), memory_mb=ml)
 
     def gen_case(mode: str, n: int, seed: int) -> str | None:
+        # 只负责产出原文；合法性由 fuzzer 内部 validator 判定并分类计数
         out = gen.run(mode, seed=seed, n=n)
         return out.text if out.ok and out.text.strip() else None
 
-    fuzzer = DifferentialFuzzer(run_std, run_brute, gen_case, ctx.ws.ce_dir)
+    def oracle_can_handle(mode: str) -> bool:
+        """P0-8：探针 —— 该模式缩小到 small_n 后暴力是否可解；不可解则记录跳过。"""
+        out = gen.run(mode, seed=ctx.cfg.fuzz.seed, n=ctx.cfg.fuzz.small_n)
+        if not out.ok or not out.text.strip():
+            return False
+        vr = ctx.validator.validate(out.text, ctx.spec)
+        if vr.status == "fail":
+            return False
+        br = run_brute(out.text.encode("utf-8"))
+        if br.verdict == Verdict.TLE:
+            return False
+        return True
 
-    cases = make_small_cases(ctx.cfg.fuzz, modes, ctx.cfg.fuzz.seed)
+    fuzzer = DifferentialFuzzer(
+        run_std,
+        run_brute,
+        gen_case,
+        ctx.ws.ce_dir,
+        checker=ctx.checker,
+        validator=ctx.validator,
+        spec=ctx.spec,
+    )
+
+    # P0-8：带 per-mode 覆盖的对拍计划（不可缩小的模式显式记录跳过原因）
+    cases, mode_skips = build_fuzz_plan(ctx.cfg.fuzz, modes, oracle_can_handle)
+    for m, reason in mode_skips.items():
+        ctx.warn(result, f"fuzz 模式 {m} 跳过 oracle 覆盖: {reason}")
+
+    def validity_gate_fail(s: FuzzSummary) -> str | None:
+        """P0-7：有效 case 太少或 oracle 失败过多 => 不能当 correctness PASS。
+
+        仅对跑完全程的 run 生效：stop_on_mismatch 提前停止的 run 由 mismatch 路径处理。
+        """
+        if not s.completed:
+            return None
+        if s.oracle_errors > ctx.cfg.fuzz.max_oracle_errors:
+            return (
+                f"fuzz 有效性门禁未通过: oracle 失败 {s.oracle_errors} 次 "
+                f"> 允许上限 {ctx.cfg.fuzz.max_oracle_errors}（有效 case {s.cases_run}/{s.cases_requested}）"
+            )
+        ratio = s.validity_ratio()
+        if s.cases_run < int(s.cases_requested * ctx.cfg.fuzz.min_success_ratio):
+            return (
+                f"fuzz 有效性门禁未通过: 有效 case {s.cases_run}/{s.cases_requested} "
+                f"({ratio:.0%}) < 最低要求 {ctx.cfg.fuzz.min_success_ratio:.0%}"
+                f"（gen 错误 {s.generator_errors}，validator 拒绝 {s.validator_errors}）"
+            )
+        return None
+
     summary = fuzzer.run(cases)
+    gate_error = validity_gate_fail(summary)
 
     attempts = 0
     max_attempts = 0 if (ctx.provider is None or ctx.cfg.offline) else ctx.cfg.repair.max_attempts
+    fresh_summary: FuzzSummary | None = None
+    holdout_summary: FuzzSummary | None = None
 
     while summary.mismatches > 0:
         ce = summary.counterexamples[-1]
@@ -431,6 +487,12 @@ def node_differential_fuzz(ctx: NodeContext) -> NodeResult:
                 len(ce.input_text),
             )
 
+        if gate_error:
+            # 有效性门禁失败优先于修复循环：不可信的 fuzz 不能驱动 repair
+            result.status = NodeStatus.FAIL
+            result.error = gate_error
+            break
+
         if attempts >= max_attempts:
             result.status = NodeStatus.FAIL
             result.error = (
@@ -469,11 +531,51 @@ def node_differential_fuzz(ctx: NodeContext) -> NodeResult:
             "idea_summary": sol.idea_summary,
             "compile": {"ok": True, "exe": cr.exe_path, "stderr": ""},
         }
-        # 修复版本成为当前有效版本后必须立即持久化，
-        # 否则后续节点（mutants/candidates/final_verify/package）重读 manifest 会用回旧 std
+        # 修复版本成为当前有效版本后必须立即持久化（P0-1）
         ctx.write_manifest("solutions", manifest)
-        # 重新全量对拍
+        # 回归对拍（原 corpus）
         summary = fuzzer.run(cases)
+        gate_error = validity_gate_fail(summary)
+
+    # 有效性门禁（独立于修复循环）：mismatches==0 但有效 case 不足同样不能 PASS
+    if gate_error is not None and result.status != NodeStatus.FAIL:
+        result.status = NodeStatus.FAIL
+        result.error = gate_error
+
+    # P0-9：repair 之后必须额外通过 fresh + holdout 两套全新语料（repair agent 看不到 holdout）
+    if (
+        summary.mismatches == 0
+        and gate_error is None
+        and attempts > 0
+        and result.status != NodeStatus.FAIL
+    ):
+        def offset_cases(offset: int, count: int) -> list:
+            rng = random.Random(ctx.cfg.fuzz.seed + offset)
+            preferred = [m for m in modes if m in ("small", "min", "tiny", "edge")] or modes[:1]
+            return [
+                (preferred[i % len(preferred)], rng.randint(1, ctx.cfg.fuzz.small_n),
+                 ctx.cfg.fuzz.seed + offset + i)
+                for i in range(count)
+            ]
+
+        fresh_cases = offset_cases(ctx.cfg.fuzz.fresh_seed_offset, ctx.cfg.fuzz.fresh_cases_after_repair)
+        holdout_cases = offset_cases(ctx.cfg.fuzz.holdout_seed_offset, ctx.cfg.fuzz.holdout_cases_after_repair)
+        fresh_summary = fuzzer.run(fresh_cases, stop_on_mismatch=True)
+        holdout_summary = fuzzer.run(holdout_cases, stop_on_mismatch=True)
+        fresh_gate = validity_gate_fail(fresh_summary)
+        holdout_gate = validity_gate_fail(holdout_summary)
+        if fresh_summary.mismatches > 0 or fresh_gate:
+            result.status = NodeStatus.FAIL
+            result.error = (
+                f"repair 后 fresh 语料验证失败: mismatches={fresh_summary.mismatches}"
+                f"{'; ' + fresh_gate if fresh_gate else ''}"
+            )
+        elif holdout_summary.mismatches > 0 or holdout_gate:
+            result.status = NodeStatus.FAIL
+            result.error = (
+                f"repair 后 holdout 语料验证失败: mismatches={holdout_summary.mismatches}"
+                f"{'; ' + holdout_gate if holdout_gate else ''}"
+            )
 
     # 样例校验：样例答案必须由程序给出，且与 std/brute 一致
     sample_issues: list[str] = []
@@ -497,8 +599,15 @@ def node_differential_fuzz(ctx: NodeContext) -> NodeResult:
     ctx.write_manifest(
         "fuzz",
         {
+            "cases_requested": summary.cases_requested,
+            "cases_generated": summary.cases_generated,
+            "cases_valid": summary.cases_valid,
             "cases_run": summary.cases_run,
             "mismatches": summary.mismatches,
+            "generator_errors": summary.generator_errors,
+            "validator_errors": summary.validator_errors,
+            "oracle_errors": summary.oracle_errors,
+            "mode_skips": mode_skips,
             "attempts": attempts,
             "std_version": manifest["std"]["version"],
             "std_path": manifest["std"]["path"],
@@ -509,12 +618,23 @@ def node_differential_fuzz(ctx: NodeContext) -> NodeResult:
             "gen_errors": summary.errors[:20],
             "sample_issues": sample_issues,
             "sample_answers": sample_answers,
+            "fresh_holdout": {
+                "fresh_cases": fresh_summary.cases_run if fresh_summary else 0,
+                "fresh_mismatches": fresh_summary.mismatches if fresh_summary else None,
+                "holdout_cases": holdout_summary.cases_run if holdout_summary else 0,
+                "holdout_mismatches": holdout_summary.mismatches if holdout_summary else None,
+            }
+            if (fresh_summary is not None or holdout_summary is not None)
+            else None,
         },
     )
 
+    if result.status == NodeStatus.FAIL and result.error:
+        return result
+
     if summary.mismatches > 0:
         result.status = NodeStatus.FAIL
-        result.error = f"differential fuzz 仍有 {summary.mismatches} 个反例（std_v{manifest['std']['version'][-1] if manifest['std']['version'][-1].isdigit() else '?' }）"
+        result.error = f"differential fuzz 仍有 {summary.mismatches} 个反例（{manifest['std']['version']}）"
         return result
 
     if sample_issues:
@@ -524,16 +644,14 @@ def node_differential_fuzz(ctx: NodeContext) -> NodeResult:
 
     result.metrics = {
         "cases_run": summary.cases_run,
+        "cases_valid": summary.cases_valid,
         "mismatches": summary.mismatches,
         "repair_attempts": attempts,
+        "mode_skips": len(mode_skips),
         "std_version": manifest["std"]["version"],
     }
     return result
 
-
-# ---------------------------------------------------------------------------
-# Node 5: generate_mutants
-# ---------------------------------------------------------------------------
 
 
 def node_generate_mutants(ctx: NodeContext) -> NodeResult:
