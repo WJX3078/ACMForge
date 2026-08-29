@@ -1,0 +1,48 @@
+# ACMForge 默认配置。
+# 所有数值都可以在这里覆盖；不要在业务代码里写死 magic number。
+# 加载顺序：代码内置默认 -> 本文件 -> ACMFORGE_CONFIG 指定的文件 -> CLI 参数
+
+llm:
+  # 未配置 api_key 时自动进入 offline 模式（只用 spec 自带 assets / 模板）
+  base_url: https://open.bigmodel.cn/api/paas/v4
+  api_key_env: ACMFORGE_API_KEY
+  model: glm-4.6
+  temperature: 0.3
+  max_retries: 3
+  timeout_s: 300
+
+runner:
+  # 留空则按 PATH -> ./tools/mingw64/bin -> 常见安装位置 搜索 g++
+  compiler_path: null
+  compile_timeout_ms: 60000
+  extra_flags: ["-O2", "-std=c++20", "-pipe"]
+
+fuzz:
+  smoke_cases: 300        # 对拍组数（小规模）
+  small_n: 50             # 对拍数据的最大规模（brute 可解规模内）
+  seed: 42
+  shrink: true            # 是否最小化反例
+  shrink_max_evals: 200
+
+mutants:
+  source_mutations: true  # 对 std 做确定性源码变异
+  llm_count: 6            # LLM 生成的错误解数量（offline 模式忽略）
+  max_total: 24
+
+tests:
+  candidate_batch: 30     # 每轮追加的候选测试数
+  min_kill_rate: 0.95
+  max_rounds: 3
+  per_mutant_eval_budget: 40   # 每个变异体最多评估多少个候选（控制耗时）
+  enforce_kill_rate: false     # true 时 kill rate 不达标 => FAIL
+
+benchmark:
+  repeats: 3
+  warmup: 1
+  std_target_ratio: 0.5   # std 最大用时须 <= ratio * TL
+  enforce_std_margin: true
+
+repair:
+  max_attempts: 3
+
+workspace_dir: workspace

@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.coverage
+
+# 本地工具链（便携版 MinGW）
+tools/
+
+# 运行产物
+workspace/
+
+# 密钥
+.env
+.acmforge_build/

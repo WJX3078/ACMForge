@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acmforge"
+version = "0.1.0"
+description = "ACMForge —— ACM 自动出题机：spec → STD/Brute → 对拍 → 变异 → 卡测 → 选测 → 基准 → 标准题包"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "pydantic>=2.6",
+    "typer>=0.12",
+    "PyYAML>=6.0",
+    "Jinja2>=3.1",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+acmforge = "acmforge.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
