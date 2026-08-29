@@ -42,6 +42,7 @@ def build_quality_report(ctx) -> dict:
 
     kill_rate = final.get("summary", {}).get("kill_rate", 0.0)
     tle = final.get("tle_mutants", {"total": 0, "killed": []})
+    rsem = final.get("resource_semantics", {})
     benchmark_passed = bench.get("passed", False)
     compile_passed = solutions_compile(ctx)
 
@@ -71,6 +72,9 @@ def build_quality_report(ctx) -> dict:
         "kill_rate": kill_rate,
         "tle_mutant_total": tle["total"],
         "tle_mutant_killed": len(tle["killed"]),
+        "tle_semantically_valid": len(rsem.get("tle_semantically_valid", [])),
+        "mle_candidates_total": rsem.get("mle_candidates_total", 0),
+        "mle_actually_mled": len(rsem.get("mle_actually_mled", [])),
         "final_test_count": len(selection.get("selected_ids", [])),
         "std_max_ms": bench.get("std_max_ms", 0.0),
         "time_limit_ms": spec.limits.time_ms,
@@ -158,7 +162,9 @@ def build_main_report(ctx, quality: dict) -> str:
     )
     lines.append(
         f"- 错误解：{quality['mutant_killed']}/{quality['mutant_total']} 被击杀"
-        f"（kill rate {quality['kill_rate']:.2%}）；TLE 类 {quality['tle_mutant_killed']}/{quality['tle_mutant_total']}"
+        f"（kill rate {quality['kill_rate']:.2%}）；"
+        f"错误复杂度解实际被 TLE 卡掉 {quality['tle_mutant_killed']}/{quality['tle_mutant_total']}"
+        f"（语义有效 {quality.get('tle_semantically_valid', 0)}/{quality['tle_mutant_total']}）"
     )
     lines.append(
         f"- 最终测试集：{quality['final_test_count']} 组；std 最大用时 {format_ms(quality['std_max_ms'])}"

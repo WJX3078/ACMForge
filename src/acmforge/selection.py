@@ -92,3 +92,32 @@ def summarize_kill_matrix(
         "mutant_killed": killed_count,
         "kill_rate": round(killed_count / len(mutant_ids), 4) if mutant_ids else 1.0,
     }
+
+
+def slow_solution_semantics(
+    records_for_mutant: list[KillRecord],
+    expected: Verdict,
+    small_test_ids: set[str],
+) -> dict:
+    """慢解（TLE/MLE）语义验证（P0-5）。
+
+    真正的"错误复杂度解"必须：小规模测试上全部 AC（答案正确），
+    且在某个测试上 observed verdict == expected（TLE/MLE）。
+
+    返回:
+        semantically_valid: 小规模测试全部 AC（否则它只是个错误解，不是慢解）
+        expected_failure_hit: 是否在某个测试上出现了预期 verdict
+        generic_killed: 是否被 generic kill（verdict != AC）
+    """
+    executions = [r for r in records_for_mutant]
+    small = [r for r in executions if r.testcase_id in small_test_ids]
+    semantically_valid = bool(small) and all(r.verdict == Verdict.AC for r in small)
+    expected_failure_hit = any(
+        r.verdict == expected for r in executions
+    )
+    generic_killed = any(r.killed for r in executions)
+    return {
+        "semantically_valid": semantically_valid,
+        "expected_failure_hit": expected_failure_hit,
+        "generic_killed": generic_killed,
+    }

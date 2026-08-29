@@ -382,7 +382,9 @@ class KillRecord(BaseModel):
     verdict: Verdict
     runtime_ms: float = 0.0
     memory_kb: int | None = None
-    killed: bool  # verdict != AC
+    killed: bool  # generic kill：verdict != AC（mutation testing 口径）
+    expected_verdict: Verdict | None = None  # 该变异体声明的预期失败方式
+    expected_failure_hit: bool = False       # observed verdict == expected（TLE/MLE 语义验证口径）
 
 
 class SelectionResult(BaseModel):
@@ -441,7 +443,10 @@ class QualityReport(BaseModel):
     mutant_killed: int = 0
     kill_rate: float = 0.0
     tle_mutant_total: int = 0
-    tle_mutant_killed: int = 0
+    tle_mutant_killed: int = 0  # 仅统计 semantically_valid 且实际 TLE 的（复杂度击杀口径）
+    tle_semantically_valid: int = 0
+    mle_candidates_total: int = 0
+    mle_actually_mled: int = 0
     final_test_count: int = 0
     std_max_ms: float = 0.0
     time_limit_ms: int = 0

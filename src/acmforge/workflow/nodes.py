@@ -40,7 +40,7 @@ from acmforge.fuzz.shrinker import shrink_input
 from acmforge.mutation.operators import apply_mutations
 from acmforge.runner.compiler import Compiler
 from acmforge.runner.local import LocalRunner
-from acmforge.selection import greedy_select, summarize_kill_matrix
+from acmforge.selection import greedy_select, slow_solution_semantics, summarize_kill_matrix
 from acmforge.util import sha256_text, truncate
 
 logger = get_logger("acmforge.nodes")
@@ -103,6 +103,26 @@ def parse_bounds_n(spec: ProblemSpec) -> tuple[int | None, int | None]:
         except (TypeError, ValueError):
             return None, None
     return None, None
+
+
+def _parse_verdict(value) -> Verdict | None:
+    """manifest 反序列化出的 expected_verdict 可能是 dict（enum dump）或 str。"""
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        value = value.get("value")
+    try:
+        return Verdict(str(value))
+    except ValueError:
+        return None
+
+
+def _role_for(expected: Verdict) -> SolutionRole:
+    if expected == Verdict.TLE:
+        return SolutionRole.TLE
+    if expected == Verdict.MLE:
+        return SolutionRole.MLE
+    return SolutionRole.WA
 
 
 def judge_against_answer(
@@ -697,18 +717,18 @@ def node_generate_mutants(ctx: NodeContext) -> NodeResult:
         except ValueError:
             cat = MutantCategory.IMPLEMENTATION_BUG
         expected = (m.get("expected_verdict", "WA") if isinstance(m, dict) else "WA").upper()
-        is_tle = expected == "TLE"
+        expected = Verdict.TLE if expected == "TLE" else (Verdict.MLE if expected == "MLE" else Verdict.WA)
         add_candidate(
             SolutionCandidate(
                 id=f"mutant_import_{i:03d}",
-                role=SolutionRole.TLE if is_tle else SolutionRole.WA,
+                role=_role_for(expected),
                 code=code,
                 origin="import",
                 origin_detail=rel,
-                mutant_kind=MutantKind.SLOW_SOLUTION if is_tle else MutantKind.IMPORTED,
+                mutant_kind=MutantKind.SLOW_SOLUTION if expected in (Verdict.TLE, Verdict.MLE) else MutantKind.IMPORTED,
                 category=cat,
                 description=m.get("description", rel) if isinstance(m, dict) else rel,
-                expected_verdict=Verdict.TLE if is_tle else Verdict.WA,
+                expected_verdict=expected,
             )
         )
 
@@ -755,15 +775,19 @@ def node_generate_mutants(ctx: NodeContext) -> NodeResult:
                 except Exception as e:
                     ctx.warn(result, f"mutant 代码生成失败（idea={idea.id}）: {truncate(str(e), 200)}")
                     continue
-                is_tle = sol_out.expected_verdict == "TLE" or cat == MutantCategory.TLE
+                expected = Verdict.TLE if sol_out.expected_verdict == "TLE" else (
+                    Verdict.MLE if sol_out.expected_verdict == "MLE" else Verdict.WA
+                )
+                if cat == MutantCategory.TLE:
+                    expected = Verdict.TLE
                 ok = add_candidate(
                     SolutionCandidate(
                         id=f"mutant_idea_{idea.id}",
-                        role=SolutionRole.TLE if is_tle else SolutionRole.WA,
+                        role=_role_for(expected),
                         code=sol_out.code,
                         origin="llm",
                         origin_detail=f"wrong_idea={idea.id}",
-                        mutant_kind=MutantKind.SLOW_SOLUTION if is_tle else MutantKind.LLM_IDEA_MUTANT,
+                        mutant_kind=MutantKind.SLOW_SOLUTION if expected in (Verdict.TLE, Verdict.MLE) else MutantKind.LLM_IDEA_MUTANT,
                         wrong_idea=WrongIdeaSpec(
                             id=idea.id,
                             category=cat,
@@ -777,7 +801,7 @@ def node_generate_mutants(ctx: NodeContext) -> NodeResult:
                         ),
                         category=cat,
                         description=sol_out.description or idea.title,
-                        expected_verdict=Verdict.TLE if is_tle else Verdict.WA,
+                        expected_verdict=expected,
                         idea_summary=idea.title,
                     )
                 )
@@ -969,7 +993,7 @@ def generate_corpus_batch(
         seen_input_sha.add(input_sha)
 
         # 答案由已验证的 std 计算
-        ans = runner.run(std_exe, stdin_bytes=text.encode("utf-8"), timeout_ms=max(tl * 2, 5000))
+        ans = runner.run(std_exe, stdin_bytes=text.encode("utf-8"), timeout_ms=max(tl * 2, 5000), memory_mb=ctx.spec.limits.memory_mb)
         if ans.verdict != Verdict.AC:
             warnings.append(f"策略 {strategy.name}#{idx} 上 std 异常({ans.verdict})，跳过该候选")
             continue
@@ -1048,7 +1072,7 @@ def node_generate_candidates(ctx: NodeContext) -> NodeResult:
         in_path = ctx.ws.corpus_dir / f"{tid}.in"
         ans_path = ctx.ws.corpus_dir / f"{tid}.ans"
         in_path.write_text(text, encoding="utf-8", newline="\n")
-        ans = runner.run(std_exe, stdin_bytes=text.encode("utf-8"), timeout_ms=max(ctx.spec.limits.time_ms * 2, 5000))
+        ans = runner.run(std_exe, stdin_bytes=text.encode("utf-8"), timeout_ms=max(ctx.spec.limits.time_ms * 2, 5000), memory_mb=ctx.spec.limits.memory_mb)
         if ans.verdict != Verdict.AC:
             result.status = NodeStatus.FAIL
             result.error = f"样例 {s.name} 上 std 运行异常: {ans.verdict}"
@@ -1179,10 +1203,12 @@ def node_kill_matrix(ctx: NodeContext) -> NodeResult:
                     candidates[mid]["exe_path"],
                     stdin_bytes=input_text.encode("utf-8"),
                     timeout_ms=tl,
+                    memory_mb=ctx.spec.limits.memory_mb,
                 )
                 verdict, killed = judge_against_answer(er, expected, ctx.checker)
                 if killed:
                     kills += 1
+                expected_verdict = _parse_verdict(candidates[mid].get("expected_verdict"))
                 all_records.append(
                     KillRecord(
                         testcase_id=tc.id,
@@ -1191,6 +1217,8 @@ def node_kill_matrix(ctx: NodeContext) -> NodeResult:
                         runtime_ms=er.runtime_ms,
                         memory_kb=er.memory_kb,
                         killed=killed,
+                        expected_verdict=expected_verdict,
+                        expected_failure_hit=(verdict == expected_verdict) if expected_verdict else False,
                     )
                 )
 
@@ -1373,8 +1401,9 @@ def node_final_verify(ctx: NodeContext) -> NodeResult:
         for tid in selected:
             input_text = (ctx.ws.tests_dir / f"{tid}.in").read_text(encoding="utf-8")
             expected = (ctx.ws.tests_dir / f"{tid}.ans").read_text(encoding="utf-8")
-            er = runner.run(cand["exe_path"], stdin_bytes=input_text.encode("utf-8"), timeout_ms=tl)
+            er = runner.run(cand["exe_path"], stdin_bytes=input_text.encode("utf-8"), timeout_ms=tl, memory_mb=ctx.spec.limits.memory_mb)
             verdict, killed = judge_against_answer(er, expected, ctx.checker)
+            expected_verdict = _parse_verdict(cand.get("expected_verdict"))
             final_records.append(
                 KillRecord(
                     testcase_id=tid,
@@ -1383,12 +1412,31 @@ def node_final_verify(ctx: NodeContext) -> NodeResult:
                     runtime_ms=er.runtime_ms,
                     memory_kb=er.memory_kb,
                     killed=killed,
+                    expected_verdict=expected_verdict,
+                    expected_failure_hit=(verdict == expected_verdict) if expected_verdict else False,
                 )
             )
 
     summary = summarize_kill_matrix(final_records, list(candidates.keys()))
-    tle_ids = [mid for mid, c in candidates.items() if c["expected_verdict"] == "TLE"]
-    tle_killed = [mid for mid in tle_ids if any(r.killed and r.solution_id == mid for r in final_records)]
+    # P0-5：慢解语义验证 —— 小规模（样例/min）上必须 AC 才配称"错误复杂度解"
+    corpus_records = [TestCaseRecord(**r) for r in (ctx.manifest("corpus") or {}).get("records", [])]
+    selected_set = set(selected)
+    small_test_ids = {
+        r.id for r in corpus_records
+        if r.id in selected_set and (r.strategy.startswith("sample_") or r.strategy == "min")
+    }
+    resource_semantics: dict[str, dict] = {}
+    for mid, cand in candidates.items():
+        ev = _parse_verdict(cand.get("expected_verdict"))
+        if ev not in (Verdict.TLE, Verdict.MLE):
+            continue
+        recs = [r for r in final_records if r.solution_id == mid]
+        resource_semantics[mid] = slow_solution_semantics(recs, ev, small_test_ids)
+    tle_ids = [m for m, c in candidates.items() if _parse_verdict(c.get("expected_verdict")) == Verdict.TLE]
+    tle_semantically_valid = [m for m in tle_ids if resource_semantics[m]["semantically_valid"]]
+    tle_actually_tled = [m for m in tle_ids if resource_semantics[m]["semantically_valid"] and resource_semantics[m]["expected_failure_hit"]]
+    mle_ids = [m for m, c in candidates.items() if _parse_verdict(c.get("expected_verdict")) == Verdict.MLE]
+    mle_actually_mled = [m for m in mle_ids if resource_semantics[m]["semantically_valid"] and resource_semantics[m]["expected_failure_hit"]]
 
     # 2) std benchmark：warmup + repeats
     bench_cfg = ctx.cfg.benchmark
@@ -1399,7 +1447,7 @@ def node_final_verify(ctx: NodeContext) -> NodeResult:
         times: list[float] = []
         mem_kb: int | None = None
         for rep in range(bench_cfg.warmup + bench_cfg.repeats):
-            er = runner.run(std_exe, stdin_bytes=input_bytes, timeout_ms=max(tl * 3, 10000))
+            er = runner.run(std_exe, stdin_bytes=input_bytes, timeout_ms=max(tl * 3, 10000), memory_mb=ctx.spec.limits.memory_mb)
             if er.verdict != Verdict.AC:
                 result.status = NodeStatus.FAIL
                 result.error = f"benchmark 中 std 在 {tid} 上异常: {er.verdict}（{er.stderr[:200]}）"
@@ -1422,7 +1470,15 @@ def node_final_verify(ctx: NodeContext) -> NodeResult:
         {
             "records": [r.model_dump(mode="json") for r in final_records],
             "summary": summary,
-            "tle_mutants": {"total": len(tle_ids), "killed": tle_killed},
+            "tle_mutants": {"total": len(tle_ids), "killed": tle_actually_tled},
+            "resource_semantics": {
+                "tle_candidates_total": len(tle_ids),
+                "tle_semantically_valid": tle_semantically_valid,
+                "tle_actually_tled": tle_actually_tled,
+                "mle_candidates_total": len(mle_ids),
+                "mle_actually_mled": mle_actually_mled,
+                "detail": resource_semantics,
+            },
         },
     )
     ctx.write_manifest(
@@ -1438,7 +1494,8 @@ def node_final_verify(ctx: NodeContext) -> NodeResult:
 
     result.metrics = {
         "final_kill_rate": summary["kill_rate"],
-        "tle_killed": f"{len(tle_killed)}/{len(tle_ids)}",
+        "tle_semantically_valid": f"{len(tle_semantically_valid)}/{len(tle_ids)}",
+        "tle_actually_tled": f"{len(tle_actually_tled)}/{len(tle_ids)}",
         "std_max_ms": round(std_max_ms, 1),
         "margin_ratio": round(margin, 3),
     }
