@@ -62,6 +62,11 @@ class NodeContext:
         self.ws = ws
         self.provider = provider  # LLMProvider | None
         self.base_dir = base_dir or spec_path.parent
+        from acmforge.checkers import make_checker
+        from acmforge.validator import BuiltinValidator
+
+        self.checker = make_checker(spec.checker)
+        self.validator = BuiltinValidator()
 
     # -- manifest 便捷 ---------------------------------------------------
 
@@ -95,11 +100,14 @@ def parse_bounds_n(spec: ProblemSpec) -> tuple[int | None, int | None]:
     return None, None
 
 
-def judge_against_answer(er: ExecutionResult, expected_answer: str) -> tuple[Verdict, bool]:
-    """以正确答案为基准判定：TLE/RE/MLE 直接击杀；正常退出则比对输出。"""
+def judge_against_answer(
+    er: ExecutionResult, expected_answer: str, checker=None
+) -> tuple[Verdict, bool]:
+    """以正确答案为基准判定：TLE/RE/MLE 直接击杀；正常退出则用 checker 比对输出。"""
     if er.verdict != Verdict.AC:
         return er.verdict, True
-    ok, _why = compare_outputs(expected_answer, er.stdout)
+    compare = checker.compare if checker is not None else compare_outputs
+    ok, _why = compare(expected_answer, er.stdout)
     if not ok:
         return Verdict.WA, True
     return Verdict.AC, False
@@ -383,13 +391,17 @@ def node_differential_fuzz(ctx: NodeContext) -> NodeResult:
         # 最小化反例
         if ctx.cfg.fuzz.shrink:
             def still_bad(text: str) -> bool:
+                # P0-2：收缩候选必须仍是合法输入（FAIL 级非法直接拒绝）
+                vr = ctx.validator.validate(text, ctx.spec)
+                if vr.status == "fail":
+                    return False
                 b = run_brute(text.encode("utf-8"))
                 if b.verdict != Verdict.AC:
                     return False
                 s = run_std(text.encode("utf-8"))
                 if s.verdict != Verdict.AC:
                     return True
-                ok, _ = compare_outputs(b.stdout, s.stdout)
+                ok, _ = ctx.checker.compare(b.stdout, s.stdout)
                 return not ok
 
             shrunk, improved, evals = shrink_input(
@@ -473,11 +485,11 @@ def node_differential_fuzz(ctx: NodeContext) -> NodeResult:
             sample_issues.append(f"样例 {i} 运行异常: std={s_res.verdict} brute={b_res.verdict}")
             sample_answers.append("")
             continue
-        ok1, why1 = compare_outputs(b_res.stdout, s_res.stdout)
+        ok1, why1 = ctx.checker.compare(b_res.stdout, s_res.stdout)
         if not ok1:
             sample_issues.append(f"样例 {i} std 与 brute 输出不一致: {why1}")
         if sample.expected_output:
-            ok2, why2 = compare_outputs(sample.expected_output, s_res.stdout)
+            ok2, why2 = ctx.checker.compare(sample.expected_output, s_res.stdout)
             if not ok2:
                 sample_issues.append(f"样例 {i} 与 spec 给定的期望输出不一致: {why2}")
         sample_answers.append(s_res.stdout.strip())
@@ -828,6 +840,11 @@ def generate_corpus_batch(
             warnings.append(f"策略 {strategy.name}#{idx} gen 失败: {out.error}")
             continue
         text = out.text
+        # P0-2：generator 产出必须过 validator，非法输入不进入验证链
+        vr = ctx.validator.validate(text, ctx.spec)
+        if vr.status == "fail":
+            warnings.append(f"策略 {strategy.name}#{idx} 生成非法输入被拒绝: {vr.reason}")
+            continue
         input_sha = sha256_text(text)
         if input_sha in seen_input_sha:
             continue
@@ -902,6 +919,12 @@ def node_generate_candidates(ctx: NodeContext) -> NodeResult:
         if s.name in existing_strategies:
             continue  # resume 重跑：样例已在语料中，跳过（幂等，不重写文件）
         text = s.params["text"]
+        # 样例同样是输入数据：非法样例说明 spec 本身有错
+        sample_vr = ctx.validator.validate(text, ctx.spec)
+        if sample_vr.status == "fail":
+            result.status = NodeStatus.FAIL
+            result.error = f"样例输入未通过 validator: {sample_vr.reason}（spec 数据错误）"
+            return result
         tid = f"{s.name}_{max_n + 1:04d}"
         max_n += 1
         in_path = ctx.ws.corpus_dir / f"{tid}.in"
@@ -1039,7 +1062,7 @@ def node_kill_matrix(ctx: NodeContext) -> NodeResult:
                     stdin_bytes=input_text.encode("utf-8"),
                     timeout_ms=tl,
                 )
-                verdict, killed = judge_against_answer(er, expected)
+                verdict, killed = judge_against_answer(er, expected, ctx.checker)
                 if killed:
                     kills += 1
                 all_records.append(
@@ -1233,7 +1256,7 @@ def node_final_verify(ctx: NodeContext) -> NodeResult:
             input_text = (ctx.ws.tests_dir / f"{tid}.in").read_text(encoding="utf-8")
             expected = (ctx.ws.tests_dir / f"{tid}.ans").read_text(encoding="utf-8")
             er = runner.run(cand["exe_path"], stdin_bytes=input_text.encode("utf-8"), timeout_ms=tl)
-            verdict, killed = judge_against_answer(er, expected)
+            verdict, killed = judge_against_answer(er, expected, ctx.checker)
             final_records.append(
                 KillRecord(
                     testcase_id=tid,

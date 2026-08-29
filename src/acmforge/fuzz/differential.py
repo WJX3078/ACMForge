@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from acmforge.checker import compare_outputs
+from acmforge.checkers import Checker, ExactTokenChecker
 from acmforge.console import get_logger
 from acmforge.domain.models import ExecutionResult, Verdict
 from acmforge.util import sha256_text
@@ -64,12 +64,14 @@ class DifferentialFuzzer:
         gen_case: Callable[[str, int, int], str | None],
         ce_dir: Path,
         max_saved_ce: int = 5,
+        checker: Checker | None = None,
     ):
         self.run_candidate = run_candidate
         self.run_oracle = run_oracle
         self.gen_case = gen_case  # (mode, n, seed) -> input text
         self.ce_dir = Path(ce_dir)
         self.max_saved_ce = max_saved_ce
+        self.checker = checker or ExactTokenChecker()
 
     def run(self, cases: list[CaseRequest], stop_on_mismatch: bool = True) -> FuzzSummary:
         summary = FuzzSummary()
@@ -110,7 +112,7 @@ class DifferentialFuzzer:
                     break
                 continue
 
-            ok, reason = compare_outputs(brute_res.stdout, std_res.stdout)
+            ok, reason = self.checker.compare(brute_res.stdout, std_res.stdout)
             if not ok:
                 ce = Counterexample(
                     index=ce_index,

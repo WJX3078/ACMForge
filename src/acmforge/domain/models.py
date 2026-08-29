@@ -143,6 +143,14 @@ class ArtifactType(str, Enum):
     PACKAGE = "package"
 
 
+class CheckerConfig(BaseModel):
+    """checker 配置：exact（默认，token 级字符串精确）或 float（显式容差）。"""
+
+    type: Literal["exact", "float", "custom"] = "exact"
+    abs_eps: float = 1e-9
+    rel_eps: float = 1e-9
+
+
 # ---------------------------------------------------------------------------
 # ProblemSpec 相关
 # ---------------------------------------------------------------------------
@@ -230,8 +238,8 @@ class ProblemSpec(BaseModel):
     intended_solution: IntendedSolution = Field(default_factory=IntendedSolution)
     limits: ResourceLimit = Field(default_factory=ResourceLimit)
 
-    # 预留：SPJ / 自定义 checker（v0.1 只支持 default 精确匹配 checker）
-    checker: Literal["default", "custom"] = "default"
+    # checker："default"/"custom"（exact 语义）或 CheckerConfig（float 需显式声明容差）
+    checker: str | CheckerConfig = "default"
     spj: bool = False
 
     # 预留：Idea 出处（对接未来的 S0 idea 库 / NoveltyChecker）
