@@ -8,7 +8,7 @@ import yaml
 
 from acmforge.eval.runner import run_eval
 from acmforge.workflow.nodes import order_candidates_for_mutant
-from acmforge.domain.models import TestCaseRecord
+from acmforge.domain.models import TestCaseRecord as _TCR  # 避免 pytest 收集 Test* 类
 
 pytestmark = pytest.mark.usefixtures("gxx")
 
@@ -46,9 +46,9 @@ def test_kill_records_unique_per_pair(tmp_path):
 
 
 def test_ordering_prefers_targeted_strategies():
-    t_lo = TestCaseRecord(id="a", strategy="random_small", mode="random", seed=1,
+    t_lo = _TCR(id="a", strategy="random_small", mode="random", seed=1,
                           input_path="x", answer_path="y", priority=100, size_bytes=999999)
-    t_target = TestCaseRecord(id="b", strategy="targeted_r1_m1", mode="all_neg", seed=2,
+    t_target = _TCR(id="b", strategy="targeted_r1_m1", mode="all_neg", seed=2,
                               input_path="x", answer_path="y", priority=10, size_bytes=10)
     ordered = order_candidates_for_mutant([t_lo, t_target], expected_tle=False,
                                           targeted_strategies={"targeted_r1_m1"})

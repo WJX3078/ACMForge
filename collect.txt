@@ -1,0 +1,29 @@
+tests/integration/test_dataset.py: 4
+tests/integration/test_eval.py: 2
+tests/integration/test_fuzz.py: 3
+tests/integration/test_fuzz_validity.py: 7
+tests/integration/test_gen_params.py: 4
+tests/integration/test_kill_matrix_dedup.py: 3
+tests/integration/test_pipeline.py: 3
+tests/integration/test_repair_persistence.py: 1
+tests/integration/test_resume_snapshot.py: 2
+tests/integration/test_runner.py: 5
+tests/integration/test_survivor.py: 1
+tests/unit/test_checker.py: 9
+tests/unit/test_config.py: 4
+tests/unit/test_failure_classifier.py: 8
+tests/unit/test_hardening_infra.py: 6
+tests/unit/test_models.py: 6
+tests/unit/test_mutant_semantics.py: 6
+tests/unit/test_mutation.py: 5
+tests/unit/test_selection.py: 7
+tests/unit/test_shrinker.py: 5
+tests/unit/test_validator.py: 8
+tests/unit/test_workspace.py: 5
+
+============================== warnings summary ===============================
+src\acmforge\domain\models.py:338
+  C:\Users\asus\Desktop\ACM自动出题机\src\acmforge\domain\models.py:338: PytestCollectionWarning: cannot collect test class 'TestCaseRecord' because it has a __init__ constructor (from: tests/integration/test_kill_matrix_dedup.py)
+    class TestCaseRecord(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
