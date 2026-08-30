@@ -188,6 +188,9 @@ class DifferentialFuzzer:
     def _save(self, ce: Counterexample, index: int) -> None:
         import json
 
+        if index >= self.max_saved_ce:
+            # 超出上限的反例仍计入 mismatches/counterexamples 内存列表，但不再落盘
+            return
         d = self.ce_dir / f"ce_{index:03d}"
         d.mkdir(parents=True, exist_ok=True)
         (d / "input.txt").write_text(ce.input_text, encoding="utf-8", newline="\n")

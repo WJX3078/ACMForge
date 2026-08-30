@@ -44,9 +44,19 @@ def strip_ansi(text: str) -> str:
 
 
 def write_json(path: Path, data: Any) -> None:
+    """原子写入（P0-14）：tmp -> flush -> fsync -> os.replace。
+
+    state.json / manifest / run_config.json 崩溃或 Ctrl+C 时不会留下半写文件。
+    """
+    import os
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 
 def read_json(path: Path) -> Any:

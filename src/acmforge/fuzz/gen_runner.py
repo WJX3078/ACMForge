@@ -11,14 +11,13 @@ stdout 即为完整输入文件内容；必须只输出输入，不得有额外�
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from acmforge.console import get_logger
+from acmforge.domain.models import Verdict
 
 logger = get_logger("acmforge.gen")
 
@@ -57,10 +56,21 @@ class GenOutput:
 
 
 class GenRunner:
-    def __init__(self, gen_path: Path):
+    """gen.py 的执行器：经由 Runner 抽象运行（P0-6）。
+
+    runner 缺省为 LocalRunner（受控开发环境；generator 属题目资产，非远程不可信代码，
+    且已有静态安全检查 + 超时 + 输出上限）。接入 DockerRunner 后同一接口即可沙箱化。
+    """
+
+    def __init__(self, gen_path: Path, runner=None):
         self.gen_path = Path(gen_path)
         if not self.gen_path.is_file():
             raise FileNotFoundError(f"generator 不存在: {self.gen_path}")
+        if runner is None:
+            from acmforge.runner.local import LocalRunner
+
+            runner = LocalRunner()
+        self.runner = runner
 
     def run(self, mode: str, seed: int, params: dict | None = None, n: int | None = None) -> GenOutput:
         """运行生成器（P0-11 协议）。
@@ -80,68 +90,48 @@ class GenRunner:
         if "n" in merged:
             cmd += ["--n", str(merged["n"])]
 
-        env = dict(os.environ)
-        env.setdefault("PYTHONIOENCODING", "utf-8")
         start = time.perf_counter()
-        try:
-            proc = self._exec(cmd, env)
-        except subprocess.TimeoutExpired:
-            return GenOutput(ok=False, error=f"gen 超时（>{GEN_TIMEOUT_S}s）")
-        except OSError as e:
-            return GenOutput(ok=False, error=f"gen 启动失败: {e}")
+        proc = self._exec(cmd)
 
-        if proc.returncode == 2 and "--params" in cmd:
+        if proc.verdict == Verdict.TLE:
+            return GenOutput(ok=False, error=f"gen 超时（>{GEN_TIMEOUT_S}s）")
+
+        if proc.exit_code == 2 and "--params" in cmd:
             # 旧协议 gen.py：不认识 --params，回退到 --n
             if not getattr(self, "_warned_legacy", False):
                 logger.warning("gen.py %s 不支持 --params，回退旧协议（仅 --n）", self.gen_path.name)
                 self._warned_legacy = True
-            legacy = [c for c in base_cmd]
+            legacy = list(base_cmd)
             if "n" in merged:
                 legacy += ["--n", str(merged["n"])]
             start = time.perf_counter()
-            try:
-                proc = self._exec(legacy, env)
-            except subprocess.TimeoutExpired:
+            proc = self._exec(legacy)
+            if proc.verdict == Verdict.TLE:
                 return GenOutput(ok=False, error=f"gen 超时（>{GEN_TIMEOUT_S}s）")
-            except OSError as e:
-                return GenOutput(ok=False, error=f"gen 启动失败: {e}")
 
         elapsed = (time.perf_counter() - start) * 1000
-        if proc.returncode != 0:
+        if proc.exit_code != 0:
             return GenOutput(
                 ok=False,
-                error=f"gen 退出码 {proc.returncode}: {proc.stderr.decode('utf-8', 'replace')[-500:]}",
+                error=f"gen 退出码 {proc.exit_code}: {proc.stderr[-500:]}",
                 time_ms=elapsed,
             )
-        return GenOutput(
-            ok=True, text=proc.stdout.decode("utf-8", errors="replace"), time_ms=elapsed
-        )
+        return GenOutput(ok=True, text=proc.stdout, time_ms=elapsed)
 
-    def _exec(self, cmd: list[str], env: dict):
-        return subprocess.run(
-            cmd,
-            capture_output=True,
-            timeout=GEN_TIMEOUT_S,
-            env=env,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-        )
+    def _exec(self, cmd: list[str], env: dict | None = None):
+        # P0-6：经由 Runner 抽象执行（LocalRunner 提供超时/输出上限/内存采样）
+        return self.runner.run_command(cmd, timeout_ms=GEN_TIMEOUT_S * 1000)
 
     def modes(self) -> list[str]:
         """询问 gen.py 支持的模式列表（约定：--modes 时打印 JSON 数组；失败则返回空）。"""
         import json
 
-        env = dict(os.environ)
-        env.setdefault("PYTHONIOENCODING", "utf-8")
         try:
-            proc = subprocess.run(
-                [sys.executable, str(self.gen_path), "--modes"],
-                capture_output=True,
-                timeout=15,
-                env=env,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            proc = self.runner.run_command(
+                [sys.executable, str(self.gen_path), "--modes"], timeout_ms=15000
             )
-            if proc.returncode == 0:
-                data = json.loads(proc.stdout.decode("utf-8", "replace"))
+            if proc.verdict == Verdict.AC:
+                data = json.loads(proc.stdout)
                 if isinstance(data, list):
                     return [str(m) for m in data]
         except Exception as e:

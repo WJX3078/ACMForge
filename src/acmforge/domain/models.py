@@ -121,7 +121,6 @@ FAILURE_OWNER: dict[FailureType, str] = {
 class NodeStatus(str, Enum):
     OK = "ok"
     FAIL = "fail"
-    SKIP = "skip"
 
 
 class RunStatus(str, Enum):
@@ -316,14 +315,6 @@ class SolutionCandidate(BaseModel):
     enabled: bool = True
 
 
-class MutantSpec(BaseModel):
-    id: str
-    category: MutantCategory
-    description: str
-    origin: str = "import"
-    expected_verdict: Verdict = Verdict.WA
-
-
 # ---------------------------------------------------------------------------
 # 测试策略与数据
 # ---------------------------------------------------------------------------
@@ -453,7 +444,10 @@ class QualityReport(BaseModel):
     std_margin_ratio: float = 0.0
     benchmark_passed: bool = False
     statement_review_passed: bool = False
-    decision: Literal["accept", "reject", "needs_review"] = "needs_review"
+    # 诚实口径：系统不能证明"不存在非预期解/完全原创"，因此永不输出 accept。
+    # rejected = 验证链失败；needs_repair = 质量指标未达标；
+    # ready_for_human_review = 机器可验证项全部通过，等待人工终审。
+    decision: Literal["rejected", "needs_repair", "ready_for_human_review"] = "needs_repair"
     warnings: list[str] = Field(default_factory=list)
 
 

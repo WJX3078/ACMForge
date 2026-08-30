@@ -16,8 +16,8 @@
 | 项目 | 结果 | 备注 |
 |---|---|---|
 | pytest 全量 | **49/49 通过** | 38 unit + 11 integration（有 g++ 才跑的 integration 全部实际执行） |
-| 离线完整流水线 | **通过** | 300 组对拍 0 mismatch，kill 7/7，std 54ms/2000ms，决策 accept |
-| smoke 流水线 | **通过** | 40 组对拍 0 mismatch，kill 7/7，决策 accept |
+| 离线完整流水线 | **通过** | 300 组对拍 0 mismatch，kill 7/7，std 54ms/2000ms，决策 ready_for_human_review |
+| smoke 流水线 | **通过** | 40 组对拍 0 mismatch，kill 7/7，决策 ready_for_human_review |
 | CLI 基础命令 | **通过** | spec validate / run / run-cpp / resume / inspect / runs 全部实际执行过 |
 | 环境检查 | 无 LLM Key | ACMFORGE_API_KEY / OPENAI_API_KEY 均未设置 → LLM 路径本次无法实测 |
 

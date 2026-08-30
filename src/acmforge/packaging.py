@@ -46,18 +46,19 @@ def build_quality_report(ctx) -> dict:
     benchmark_passed = bench.get("passed", False)
     compile_passed = solutions_compile(ctx)
 
-    decision = "accept"
+    # P0 语义硬化：永不 ACCEPT。机器能验证的全部通过也只能给 READY_FOR_HUMAN_REVIEW。
+    decision = "ready_for_human_review"
     warnings: list[str] = []
-    if fuzz.get("mismatches", 1) != 0:
-        decision = "reject"
+    if not compile_passed or fuzz.get("mismatches", 1) != 0:
+        decision = "rejected"
     elif kill_rate < ctx.cfg.tests.min_kill_rate:
         warnings.append(f"kill rate {kill_rate} < 目标 {ctx.cfg.tests.min_kill_rate}")
-        decision = "needs_review"
+        decision = "needs_repair"
     elif not benchmark_passed:
         warnings.append("std 性能余量不足")
-        decision = "needs_review"
+        decision = "needs_repair"
     elif not review.get("passed", False):
-        decision = "needs_review"
+        decision = "needs_repair"
 
     return {
         "slug": spec.slug,

@@ -65,7 +65,7 @@ acmforge run examples/max-subarray-sum/problem.yaml --offline --smoke  # 快速�
 跑完后的预期结论（一台普通笔记本约 2 分钟 / 冒烟 40 秒）：
 
 ```
-对拍 300 例 0 mismatch | kill 7/7 | std 58ms/2000ms | 决策 accept
+对拍 300 例 0 mismatch | kill 7/7 | std 58ms/2000ms | 决策 ready_for_human_review
 ```
 
 产物在 `workspace/max-subarray-sum/runs/<run_id>/`：
@@ -154,7 +154,7 @@ acmforge eval benchmarks/v1 --provider llm
 ```
 
 - 单元：领域模型、配置、workspace 隔离与防覆盖、checker、shrinker（纯函数）、贪心选测、变异算子、失败分类器（不碰编译器）。
-- 集成（有 g++ 才跑）：编译/超时/RE/输出上限防护、植入 bug 的 std 被对拍抓住且反例可复现、正确 std 全绿、**完整流水线离线跑通（kill 7/7、决策 accept）**、坏 std 流水线正确失败并落盘反例、断点续跑、**数据集参考实现对拍一致性、eval mock 全链路、survivor 定向闭环**。
+- 集成（有 g++ 才跑）：编译/超时/RE/输出上限防护、植入 bug 的 std 被对拍抓住且反例可复现、正确 std 全绿、**完整流水线离线跑通（kill 7/7、决策 ready_for_human_review）**、坏 std 流水线正确失败并落盘反例、断点续跑、**数据集参考实现对拍一致性、eval mock 全链路、survivor 定向闭环**。
 
 ## 已知边界（诚实声明）
 

@@ -120,6 +120,27 @@ class LocalRunner:
         memory_mb: int | None = None,
         cwd: str | Path | None = None,
     ) -> ExecutionResult:
+        return self._run_argv([str(exe)], stdin_bytes, timeout_ms, memory_mb, cwd)
+
+    def run_command(
+        self,
+        argv: list[str],
+        stdin_bytes: bytes = b"",
+        timeout_ms: int = 30000,
+        memory_mb: int | None = None,
+        cwd: str | Path | None = None,
+    ) -> ExecutionResult:
+        """任意命令行的受限运行（P0-6：解释型不可信代码如 gen.py 走这里）。"""
+        return self._run_argv([str(a) for a in argv], stdin_bytes, timeout_ms, memory_mb, cwd)
+
+    def _run_argv(
+        self,
+        argv: list[str],
+        stdin_bytes: bytes,
+        timeout_ms: int,
+        memory_mb: int | None,
+        cwd: str | Path | None,
+    ) -> ExecutionResult:
         timeout_s = max(timeout_ms, 1) / 1000.0
         mem_limit = memory_mb or self.default_memory_mb
 
@@ -141,7 +162,7 @@ class LocalRunner:
         internal_error: str | None = None
 
         try:
-            proc = subprocess.Popen([str(exe)], **popen_kwargs)
+            proc = subprocess.Popen(argv, **popen_kwargs)
         except OSError as e:
             return ExecutionResult(
                 verdict=Verdict.RE, stderr=f"failed to start: {e}", runtime_ms=0.0

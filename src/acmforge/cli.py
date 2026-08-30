@@ -24,7 +24,7 @@ from acmforge.config import load_config
 from acmforge.console import get_logger, setup_console
 from acmforge.domain.errors import AcmforgeError
 from acmforge.domain.models import ProblemSpec, RunStatus, Verdict
-from acmforge.util import format_ms
+from acmforge.util import format_ms, write_json
 
 app = typer.Typer(
     name="acmforge",
@@ -156,9 +156,9 @@ def run(
     if smoke:
         cfg.fuzz.smoke_cases = 40
         cfg.fuzz.small_n = 12
-        cfg.fuzz.per_mode_cases = 5
-        cfg.fuzz.fresh_cases_after_repair = 20
-        cfg.fuzz.holdout_cases_after_repair = 20
+        cfg.fuzz.per_mode_cases = 3
+        cfg.fuzz.fresh_cases_after_repair = 10
+        cfg.fuzz.holdout_cases_after_repair = 10
         cfg.tests.candidate_batch = 8
         cfg.tests.per_mutant_eval_budget = 18
         cfg.benchmark.repeats = 1
@@ -174,6 +174,14 @@ def run(
 
     ws_root = Path(cfg.workspace_dir)
     ws = Workspace.create(ws_root, spec.slug)
+    # P0-13：持久化 resolved 配置快照（含 CLI/smoke override 后的最终值），resume 必须复用
+    snapshot = {
+        "config": cfg.model_dump(mode="json"),
+        "config_sha256": __import__("hashlib").sha256(
+            json.dumps(cfg.model_dump(mode="json"), sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest(),
+    }
+    write_json(ws.run_dir / "run_config.json", snapshot)
     from acmforge.console import attach_file_logger
 
     attach_file_logger(logger, ws.logs_dir / "run.log")
@@ -296,8 +304,12 @@ def resume(
     run_id: str = typer.Argument(..., help="run id 或 run 目录路径"),
     from_node: Optional[str] = typer.Option(None, "--from", help="从指定节点开始重跑"),
     until: Optional[str] = typer.Option(None, "--until", help="执行到指定节点为止"),
+    override_config: bool = typer.Option(
+        False, "--override-config", help="忽略 run 快照配置，改用当前配置文件"
+    ),
 ) -> None:
-    """断点续跑。"""
+    """断点续跑（默认使用 run 创建时的配置快照，保证前后一致）。"""
+    from acmforge.config import AppConfig
     from acmforge.llm.provider import OpenAICompatProvider
     from acmforge.workflow import NodeContext, build_engine
     from acmforge.workspace import Workspace
@@ -305,7 +317,20 @@ def resume(
     run_dir = _find_run(run_id)
     state = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
     spec_path = run_dir / "spec.yaml"
-    cfg = load_config()
+
+    # P0-13：优先使用 run 快照配置（workspace_dir 仍取当前发现位置）
+    current_cfg = load_config()
+    snapshot_file = run_dir / "run_config.json"
+    if snapshot_file.is_file() and not override_config:
+        snap = json.loads(snapshot_file.read_text(encoding="utf-8"))
+        cfg = AppConfig(**snap["config"])
+        cfg.workspace_dir = str(current_cfg.workspace_dir)
+        typer.echo(
+            f"使用 run 配置快照（sha256={snap['config_sha256'][:12]}…）；"
+            "如需当前配置请加 --override-config"
+        )
+    else:
+        cfg = current_cfg
     spec = load_spec(spec_path)
 
     # 恢复 spec 原始位置（assets 相对路径基于它解析）

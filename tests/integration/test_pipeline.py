@@ -36,7 +36,7 @@ def test_full_pipeline_offline(cfg: AppConfig, example_dir: Path, tmp_path: Path
     pkg = ctx.manifest("package")
     assert pkg and ws.resolve(pkg["dir"]).is_dir()
     quality = pkg["quality"]
-    assert quality["decision"] == "accept"
+    assert quality["decision"] == "ready_for_human_review"
     assert quality["differential_mismatches"] == 0
     assert quality["kill_rate"] >= 0.95
     assert quality["tle_mutant_killed"] == quality["tle_mutant_total"]

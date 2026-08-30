@@ -109,11 +109,15 @@ class Workspace:
     # ------------------------------------------------------------------
 
     def record_artifact(self, path: Path, type_name: str, producer: str) -> dict[str, Any]:
+        rel = self.rel(path)
+        entry_sha = sha256_file(path)
         entry = {
-            "id": f"{producer}:{path.name}",
+            # P0-15：producer + 相对路径 + sha 前缀，保证全局唯一
+            # （旧 id 仅 producer:filename，mutants/m1 与 mutants/m2 会撞车）
+            "id": f"{producer}:{rel}:{entry_sha[:8]}",
             "type": type_name,
-            "path": self.rel(path),
-            "sha256": sha256_file(path),
+            "path": rel,
+            "sha256": entry_sha,
             "producer": producer,
             "created_at": now_iso(),
         }

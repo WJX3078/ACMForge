@@ -49,7 +49,7 @@ cat workspace/<slug>/runs/<run_id>/final/<slug>/quality.json
 
 验收标准（quality.json）：
 
-- `decision == "accept"`：可发布
+- `decision == "ready_for_human_review"`：机器可验证项全部通过（系统永不输出 accept，不存在非预期解/完全原创只能由人工终审确认）
 - `differential_mismatches == 0` 且 `counterexamples == 0`（或已修复）
 - `kill_rate >= 0.95`（`tests.enforce_kill_rate: true` 时流水线强制）
 - `tle_mutant_killed == tle_mutant_total`（错误复杂度解必须全被卡）

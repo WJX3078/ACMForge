@@ -313,7 +313,12 @@ def node_compile_solutions(ctx: NodeContext) -> NodeResult:
     def compile_one(rel_path: str, name: str) -> dict:
         src = ctx.ws.resolve(rel_path)
         cr = compiler.compile(src, sol_dir, name)
-        return {"ok": cr.ok, "exe": cr.exe_path, "stderr": truncate(cr.compiler_stderr, 3000)}
+        return {
+            "ok": cr.ok,
+            "exe": cr.exe_path,
+            "stderr": truncate(cr.compiler_stderr, 3000),
+            "time_ms": round(cr.time_ms, 1),  # P0-16：真实数值指标
+        }
 
     std_info = compile_one(manifest["std"]["path"], manifest["std"]["version"])
     attempts = 0
@@ -378,7 +383,8 @@ def node_compile_solutions(ctx: NodeContext) -> NodeResult:
 
     result.metrics = {
         "std_version": manifest["std"]["version"],
-        "std_compile_ms": std_info.get("stderr") is not None,
+        "std_compile_ms": std_info["time_ms"],  # P0-16：数值而非 bool
+        "brute_compile_ms": brute_info["time_ms"],
     }
     return result
 
