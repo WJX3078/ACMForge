@@ -18,5 +18,9 @@ workspace/
 .acmforge_build/
 
 # 前端工程（acmforge/）依赖与构建产物不进 git，源码正常管理
-acmforge/node_modules/
-acmforge/dist/
+# （锚定到仓库根：避免无锚定模式误伤 src/acmforge/ —— v0.1.1 的教训）
+/acmforge/node_modules/
+/acmforge/dist/
+/acmforge/tools/
+# 本地助手记忆目录（第三方工具数据，不入仓库）
+/.workbuddy/
