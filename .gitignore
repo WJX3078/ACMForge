@@ -17,5 +17,6 @@ workspace/
 .env
 .acmforge_build/
 
-# 用户本地的前端工程（未纳入本仓库管理；含 node_modules）
-acmforge/
+# 前端工程（acmforge/）依赖与构建产物不进 git，源码正常管理
+acmforge/node_modules/
+acmforge/dist/

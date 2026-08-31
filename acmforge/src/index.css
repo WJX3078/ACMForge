@@ -1,0 +1,205 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------
+   Design tokens
+   Dark is the default theme. Every surface is a low-chroma neutral
+   (zinc/slate family); accent is used at <5% of painted area.
+---------------------------------------------------------------- */
+@layer base {
+  :root {
+    /* light */
+    --canvas: 0 0% 98.5%;
+    --surface: 0 0% 100%;
+    --surface-raised: 0 0% 100%;
+    --surface-sunken: 240 5% 96%;
+    --line: 240 6% 90%;
+    --line-strong: 240 6% 82%;
+    --fg: 240 10% 8%;
+    --fg-muted: 240 4% 40%;
+    --fg-subtle: 240 4% 58%;
+    --brand: 243 75% 58%;
+    --brand-fg: 0 0% 100%;
+    --brand-soft: 243 75% 96%;
+    --ok: 152 60% 36%;
+    --ok-soft: 152 60% 95%;
+    --warn: 35 92% 42%;
+    --warn-soft: 35 92% 95%;
+    --danger: 0 72% 48%;
+    --danger-soft: 0 72% 96%;
+    --info: 199 89% 42%;
+    --info-soft: 199 89% 95%;
+    --think: 262 60% 55%;
+    --think-soft: 262 60% 96%;
+    --grid: 240 6% 78%;
+  }
+
+  .dark {
+    --canvas: 240 10% 3.9%;
+    --surface: 240 6% 6.5%;
+    --surface-raised: 240 5% 9%;
+    --surface-sunken: 240 10% 2.6%;
+    --line: 240 5% 15%;
+    --line-strong: 240 5% 24%;
+    --fg: 0 0% 96%;
+    --fg-muted: 240 5% 63%;
+    --fg-subtle: 240 5% 44%;
+    --brand: 239 84% 67%;
+    --brand-fg: 240 10% 6%;
+    --brand-soft: 239 60% 16%;
+    --ok: 152 56% 48%;
+    --ok-soft: 152 45% 12%;
+    --warn: 38 92% 55%;
+    --warn-soft: 38 60% 12%;
+    --danger: 0 72% 58%;
+    --danger-soft: 0 55% 14%;
+    --info: 199 89% 56%;
+    --info-soft: 199 60% 13%;
+    --think: 262 80% 72%;
+    --think-soft: 262 45% 16%;
+    --grid: 240 6% 13%;
+  }
+
+  * {
+    @apply border-line;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-fg font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: hsl(var(--brand) / 0.28);
+  }
+
+  /* Thin, unobtrusive scrollbars — developer-tool feel */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--line-strong) / 0.8);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--fg-subtle) / 0.7);
+    background-clip: content-box;
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--brand) / 0.7);
+    outline-offset: 1px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  /* Faint structural grid used behind the hero only */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, hsl(var(--grid) / 0.55) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--grid) / 0.55) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .bg-dots {
+    background-image: radial-gradient(hsl(var(--grid) / 0.7) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  /* Panel: the single container primitive. Flat, 1px hairline, no shadow. */
+  .panel {
+    @apply bg-surface border border-line rounded-lg;
+  }
+
+  .panel-header {
+    @apply flex items-center justify-between gap-3 px-4 h-10 border-b border-line;
+  }
+
+  .hairline {
+    @apply border-line;
+  }
+
+  /* Section eyebrow label */
+  .eyebrow {
+    @apply text-2xs font-semibold uppercase tracking-[0.09em] text-fg-subtle;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Dotted leader for spec rows */
+  .leader {
+    background-image: radial-gradient(hsl(var(--line-strong)) 1px, transparent 1px);
+    background-size: 4px 4px;
+    background-position: 0 100%;
+    background-repeat: repeat-x;
+  }
+}
+
+/* --- C++ syntax highlighting palette ------------------------------------- */
+.tok-comment {
+  color: hsl(var(--fg-subtle));
+  font-style: italic;
+}
+.tok-preproc {
+  color: hsl(var(--think));
+}
+.tok-string {
+  color: hsl(var(--ok));
+}
+.tok-number {
+  color: hsl(var(--warn));
+}
+.tok-keyword {
+  color: hsl(var(--brand));
+  font-weight: 500;
+}
+.tok-type {
+  color: hsl(var(--info));
+}
+.tok-func {
+  color: hsl(199 89% 62%);
+}
+.tok-punct {
+  color: hsl(var(--fg-muted));
+}
+.tok-ident {
+  color: hsl(var(--fg));
+}
+.tok-macro {
+  color: hsl(38 92% 62%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
